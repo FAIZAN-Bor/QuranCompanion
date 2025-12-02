@@ -1,0 +1,16 @@
+{
+  "name": "quran-companion-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "mobile": "cd mobile && npm start",
+    "mobile:android": "cd mobile && npm run android",
+    "mobile:ios": "cd mobile && npm run ios",
+    "backend": "cd backend && npm run dev",
+    "install:all": "npm install && cd mobile && npm install && cd ../backend && npm install"
+  },
+  "description": "Quran Companion - Mobile App & Backend API",
+  "engines": {
+    "node": ">=20"
+  }
+}
