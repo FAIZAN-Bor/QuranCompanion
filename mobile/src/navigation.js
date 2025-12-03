@@ -21,6 +21,7 @@ import DrawerNavigator from './navigation/BottomTabNavigator';
 import BottomTabNavigator from './navigation/BottomTabNavigator';
 import ChangPasswordScreen from './Setting/ChangePasswordScreen';
 import EditProfile from './Setting/EditProfile';
+import ParentNavigator from './parent/ParentNavigator';
 
 
 const Stack = createNativeStackNavigator();
@@ -47,6 +48,9 @@ const navigation = () => {
                    <Stack.Screen name="NotificationScreen" component={NotificationScreen} options={{title:'Notifications',headerShown: true ,headerTintColor:'#2b624c'}}/>
       <Stack.Screen name="EditProfile" component={EditProfile} options={{title:'Edit Profile',headerShown: true ,headerTintColor:'#2b624c'}}/>
                      <Stack.Screen name="ChangPasswordScreen" component={ChangPasswordScreen} options={{title:'Notifications',headerShown: true ,headerTintColor:'#2b624c'}}/>
+      
+      {/* Parent Screens */}
+      <Stack.Screen name="ParentNavigator" component={ParentNavigator} />
       
       </Stack.Navigator>
     </NavigationContainer>

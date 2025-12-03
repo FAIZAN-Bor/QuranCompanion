@@ -1,21 +1,23 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Image } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
-import LinearGradient from 'react-native-linear-gradient';
 
-// Validation Schema
-const LoginSchema = Yup.object().shape({
-  email: Yup.string()
-    .email("Invalid Email Format")
-    .required("Email is required"),
+const ParentLogin = ({ navigation }) => {
+  const [isParentMode, setIsParentMode] = useState(true);
 
-  password: Yup.string()
-    .min(6, "Password must be at least 6 characters")
-    .required("Password is required"),
-});
+  const validationSchema = Yup.object().shape({
+    email: Yup.string().email('Invalid email').required('Email is required'),
+    password: Yup.string().min(6, 'Password must be at least 6 characters').required('Password is required'),
+  });
 
-export default function Login({navigation}) {
+  const handleLogin = (values) => {
+    console.log('Parent Login:', values);
+    // Navigate to Parent Main (Bottom Tab Navigator)
+    navigation.navigate('ParentMain');
+  };
+
   return (
     <LinearGradient
       colors={['#E8F5E9', '#F1F8E9', '#FFF9C4']}
@@ -23,18 +25,15 @@ export default function Login({navigation}) {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
         <View style={styles.container}>
-           <Image style={{ alignSelf:'center', marginTop:5, marginBottom:5, width:70,height:70,borderRadius:10}} source={require('../assests/Logo.jpg')}/>
+          <Image style={{ alignSelf:'center', marginTop:5, marginBottom:5, width:70,height:70,borderRadius:10}} source={require('../assests/Logo.jpg')}/>
           <Text style={styles.title}>Quran Companion</Text>
-          <Text style={styles.subtitle}>Login to Continue</Text>
+          <Text style={styles.subtitle}>Parent Login</Text>
 
           {/* --- Formik Form --- */}
           <Formik
-            initialValues={{ email: "", password: "" }}
-            validationSchema={LoginSchema}
-            onSubmit={(values) => {
-              console.log("Login Values:", values);
-              navigation.navigate('Home');
-            }}
+            initialValues={{ email: '', password: '' }}
+            validationSchema={validationSchema}
+            onSubmit={handleLogin}
           >
             {({ handleChange, handleBlur, handleSubmit, values, errors, touched }) => (
               <>
@@ -42,10 +41,10 @@ export default function Login({navigation}) {
                 <TextInput
                   style={styles.input}
                   placeholder="Email"
-                  placeholderTextColor="#999"
+                  placeholderTextColor="#6C8A7A"
                   value={values.email}
-                  onChangeText={handleChange("email")}
-                  onBlur={handleBlur("email")}
+                  onChangeText={handleChange('email')}
+                  onBlur={handleBlur('email')}
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
@@ -57,10 +56,10 @@ export default function Login({navigation}) {
                 <TextInput
                   style={styles.input}
                   placeholder="Password"
-                  placeholderTextColor="#999"
+                  placeholderTextColor="#6C8A7A"
                   value={values.password}
-                  onChangeText={handleChange("password")}
-                  onBlur={handleBlur("password")}
+                  onChangeText={handleChange('password')}
+                  onBlur={handleBlur('password')}
                   secureTextEntry={true}
                 />
                 {errors.password && touched.password && (
@@ -72,18 +71,18 @@ export default function Login({navigation}) {
                 </TouchableOpacity>
 
                 {/* Login Button */}
-                <TouchableOpacity onPress={() => navigation.navigate('Otp')} activeOpacity={0.8}>
+                <TouchableOpacity onPress={handleSubmit} activeOpacity={0.8}>
                   <LinearGradient
                     colors={['#0A7D4F', '#0F9D63', '#15B872']}
                     style={styles.btn}
                     start={{x: 0, y: 0}}
                     end={{x: 1, y: 0}}
                   >
-                    <Text style={styles.btnText}>Login</Text>
+                    <Text style={styles.btnText}>Login as Parent</Text>
                   </LinearGradient>
                 </TouchableOpacity>
 
-                {/* Signup Redirect */}
+                {/* SignUp Redirect */}
                 <View style={styles.signupRow}>
                   <Text style={styles.signupText}>Don't have an account? </Text>
                   <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
@@ -91,14 +90,13 @@ export default function Login({navigation}) {
                   </TouchableOpacity>
                 </View>
 
-                {/* Parent Login Link */}
-                <View style={styles.parentLoginContainer}>
-                  <Text style={styles.parentLoginText}>Are you a parent? </Text>
-                  <TouchableOpacity onPress={() => navigation.navigate('ParentNavigator')}>
-                    <Text style={styles.parentLoginLink}>Login as Parent</Text>
+                {/* Switch to Learner Login */}
+                <View style={styles.switchContainer}>
+                  <Text style={styles.switchText}>Not a parent? </Text>
+                  <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+                    <Text style={styles.switchLink}>Login as Learner</Text>
                   </TouchableOpacity>
                 </View>
-                
               </>
             )}
           </Formik>
@@ -106,7 +104,7 @@ export default function Login({navigation}) {
       </ScrollView>
     </LinearGradient>
   );
-}
+};
 
 const styles = StyleSheet.create({
   wrapper: {
@@ -156,6 +154,13 @@ const styles = StyleSheet.create({
     color: '#333',
     backgroundColor: '#FAFAFA',
   },
+  errorText: {
+    color: '#E53935',
+    marginBottom: 12,
+    marginLeft: 5,
+    fontSize: 13,
+    fontWeight: '600',
+  },
   forgot: {
     color: '#0A7D4F',
     textAlign: 'right',
@@ -181,13 +186,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1,
   },
-  errorText: {
-    color: '#E53935',
-    marginBottom: 12,
-    marginLeft: 5,
-    fontSize: 13,
-    fontWeight: '600',
-  },
   signupRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -203,7 +201,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 14,
   },
-  parentLoginContainer: {
+  switchContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 20,
@@ -211,14 +209,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E8F5E9',
   },
-  parentLoginText: {
+  switchText: {
     color: '#666',
     fontSize: 14,
     fontWeight: '600',
   },
-  parentLoginLink: {
+  switchLink: {
     color: '#1976D2',
     fontWeight: '800',
     fontSize: 14,
   },
 });
+
+export default ParentLogin;
