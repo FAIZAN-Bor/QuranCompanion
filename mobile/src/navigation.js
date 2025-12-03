@@ -8,6 +8,7 @@ import SignUp from './auth/SignUp';
 import Login from './auth/Login';
 import Otp from './auth/Otp';
 import ForgetPassword from './auth/forgetPassword';
+import LearnerSurvey from './auth/LearnerSurvey';
 
 import DuaLearn from './home/DuaLearn';  
 import Quran from './home/Quran'
@@ -17,6 +18,9 @@ import Quaida from './home/Quaida';
 import QuidaTaqkti from './home/QuidaTaqkti';
 import QuidaDetail from './home/QuidaDetail';
 import NotificationScreen from './home/NotificationScreen';
+import ProgressMap from './home/ProgressMap';
+import LevelDetail from './home/LevelDetail';
+import QuizScreen from './home/QuizScreen';
 import DrawerNavigator from './navigation/BottomTabNavigator';
 import BottomTabNavigator from './navigation/BottomTabNavigator';
 import ChangPasswordScreen from './Setting/ChangePasswordScreen';
@@ -36,6 +40,7 @@ const navigation = () => {
           <Stack.Screen name="SignUp" component={SignUp} />
          <Stack.Screen name="Login" component={Login} /> 
             <Stack.Screen name="Otp" component={Otp} /> 
+            <Stack.Screen name="LearnerSurvey" component={LearnerSurvey} />
             <Stack.Screen name="ForgetPassword" component={ForgetPassword} /> 
                 <Stack.Screen name="DuaLearn" component={DuaLearn}  options={{title:'Dua Screen',headerShown: true ,headerTintColor:'#2b624c'}}/> 
                 <Stack.Screen name="Quran" component={Quran}options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}} /> 
@@ -48,6 +53,11 @@ const navigation = () => {
                    <Stack.Screen name="NotificationScreen" component={NotificationScreen} options={{title:'Notifications',headerShown: true ,headerTintColor:'#2b624c'}}/>
       <Stack.Screen name="EditProfile" component={EditProfile} options={{title:'Edit Profile',headerShown: true ,headerTintColor:'#2b624c'}}/>
                      <Stack.Screen name="ChangPasswordScreen" component={ChangPasswordScreen} options={{title:'Notifications',headerShown: true ,headerTintColor:'#2b624c'}}/>
+      
+      {/* Progress Map Screens */}
+      <Stack.Screen name="ProgressMap" component={ProgressMap} />
+      <Stack.Screen name="LevelDetail" component={LevelDetail} />
+      <Stack.Screen name="QuizScreen" component={QuizScreen} />
       
       {/* Parent Screens */}
       <Stack.Screen name="ParentNavigator" component={ParentNavigator} />

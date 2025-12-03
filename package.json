@@ -12,5 +12,8 @@
   "description": "Quran Companion - Mobile App & Backend API",
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@react-native-community/cli": "^20.0.2"
   }
 }
