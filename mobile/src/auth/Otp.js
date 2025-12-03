@@ -57,7 +57,7 @@ export default function Otp({ navigation }) {
           ))}
         </View>
 
-        <TouchableOpacity onPress={() => navigation.navigate('BottomTabNavigator')} activeOpacity={0.8}>
+        <TouchableOpacity onPress={() => navigation.navigate('LearnerSurvey')} activeOpacity={0.8}>
           <LinearGradient
             colors={['#0A7D4F', '#0F9D63', '#15B872']}
             style={styles.button}

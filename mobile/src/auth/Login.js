@@ -71,8 +71,8 @@ export default function Login({navigation}) {
                   <Text style={styles.forgot}>Forgot Password?</Text>
                 </TouchableOpacity>
 
-                {/* Login Button */}
-                <TouchableOpacity onPress={() => navigation.navigate('Otp')} activeOpacity={0.8}>
+                {/* Login Button - direct to Home (no survey) */}
+                <TouchableOpacity onPress={() => navigation.navigate('BottomTabNavigator')} activeOpacity={0.8}>
                   <LinearGradient
                     colors={['#0A7D4F', '#0F9D63', '#15B872']}
                     style={styles.btn}

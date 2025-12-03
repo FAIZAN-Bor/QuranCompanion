@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import home from '../home/home';
 import SettingsScreen from '../DrawerScreen/SettingScreen';
 import MistakeScreen from '../DrawerScreen/MistakeScreen';
-import AnalyticsScreen from '../DrawerScreen/AnalyticsScreen';
+import ProgressMap from '../home/ProgressMap';
 
 
 import { Image } from 'react-native';
@@ -31,20 +31,21 @@ export default function BottomTabNavigator() {
       />
      
       <Tab.Screen 
+        name="Progress Map" 
+        component={ProgressMap} 
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Image source={require('../assests/analysis.png')} style={{ width: size, height: size, tintColor: color }} />
+          )
+        }}
+      />
+     
+      <Tab.Screen 
         name="Mistake" 
         component={MistakeScreen} 
         options={{
           tabBarIcon: ({ color, size }) => (
             <Image source={require('../assests/mistake.png')} style={{ width: size, height: size, tintColor: color }} />
-          )
-        }}
-      />
-      <Tab.Screen 
-        name="Analytics" 
-        component={AnalyticsScreen} 
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Image source={require('../assests/analysis.png')} style={{ width: size, height: size, tintColor: color }} />
           )
         }}
       />
