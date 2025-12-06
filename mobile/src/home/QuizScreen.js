@@ -7,10 +7,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
+import quizService from '../services/quizService';
 
 const QuizScreen = ({ route, navigation }) => {
   const { level } = route.params;
@@ -18,6 +20,8 @@ const QuizScreen = ({ route, navigation }) => {
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [score, setScore] = useState(0);
   const [showResult, setShowResult] = useState(false);
+  const [userAnswers, setUserAnswers] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
 
   // Sample quiz questions (you can expand this with real data)
   const quizQuestions = [
@@ -51,7 +55,16 @@ const QuizScreen = ({ route, navigation }) => {
       return;
     }
 
-    if (selectedAnswer === quizQuestions[currentQuestion].correctAnswer) {
+    const isCorrect = selectedAnswer === quizQuestions[currentQuestion].correctAnswer;
+    
+    // Store answer
+    setUserAnswers([...userAnswers, {
+      questionId: quizQuestions[currentQuestion].id,
+      userAnswer: selectedAnswer,
+      isCorrect
+    }]);
+
+    if (isCorrect) {
       setScore(score + 1);
     }
 
@@ -59,7 +72,31 @@ const QuizScreen = ({ route, navigation }) => {
       setCurrentQuestion(currentQuestion + 1);
       setSelectedAnswer(null);
     } else {
+      submitQuiz();
+    }
+  };
+
+  const submitQuiz = async () => {
+    try {
+      setSubmitting(true);
+      const quizData = {
+        quizId: `quiz_${level.id}`,
+        module: 'qaida',
+        levelId: level.id,
+        questions: userAnswers,
+        score: score + (selectedAnswer === quizQuestions[currentQuestion].correctAnswer ? 1 : 0),
+        totalQuestions: quizQuestions.length,
+        timeSpent: 0 // You can track time if needed
+      };
+      
+      await quizService.submitQuiz(quizData);
       setShowResult(true);
+    } catch (error) {
+      console.error('Quiz submission error:', error);
+      Alert.alert('Error', 'Failed to submit quiz. Showing results anyway.');
+      setShowResult(true);
+    } finally {
+      setSubmitting(false);
     }
   };
 

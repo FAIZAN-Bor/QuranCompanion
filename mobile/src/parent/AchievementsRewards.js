@@ -1,60 +1,80 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import parentService from '../services/parentService';
 
 const AchievementsRewards = ({ route }) => {
   const { child } = route.params || { child: { name: 'Child' } };
+  const [achievements, setAchievements] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const achievements = [
-    {
-      id: 1,
-      icon: '🏆',
-      title: 'Perfect Recitation',
-      description: 'Achieved 100% accuracy in a lesson',
-      dateEarned: '3 days ago',
-      color: ['#FFD700', '#FFA000'],
-    },
-    {
-      id: 2,
-      icon: '🔥',
-      title: 'Daily Practice Streak',
-      description: '7 days consecutive practice',
-      dateEarned: 'Today',
-      color: ['#E53935', '#C62828'],
-    },
-    {
-      id: 3,
-      icon: '⭐',
-      title: 'Tajweed Master Level 1',
-      description: 'Mastered basic Tajweed rules',
-      dateEarned: '1 week ago',
-      color: ['#1976D2', '#1565C0'],
-    },
-    {
-      id: 4,
-      icon: '📖',
-      title: 'Surah Completed',
-      description: 'Completed Surah Al-Fatihah',
-      dateEarned: '2 weeks ago',
-      color: ['#7B1FA2', '#6A1B9A'],
-    },
-    {
-      id: 5,
-      icon: '✅',
-      title: 'Qaida Basic Certified',
-      description: 'Completed Qaida basics successfully',
-      dateEarned: '3 weeks ago',
-      color: ['#0A7D4F', '#087F4F'],
-    },
-    {
-      id: 6,
-      icon: '🎯',
-      title: 'Quiz Champion',
-      description: 'Scored 90%+ in 5 quizzes',
-      dateEarned: '1 month ago',
-      color: ['#F57C00', '#EF6C00'],
-    },
-  ];
+  // Achievement type to icon/color mapping
+  const achievementStyles = {
+    first_lesson: { icon: '📖', color: ['#7B1FA2', '#6A1B9A'] },
+    week_streak: { icon: '🔥', color: ['#E53935', '#C62828'] },
+    perfect_score: { icon: '🏆', color: ['#FFD700', '#FFA000'] },
+    surah_completed: { icon: '⭐', color: ['#1976D2', '#1565C0'] },
+    dua_master: { icon: '🤲', color: ['#0A7D4F', '#087F4F'] },
+    qaida_complete: { icon: '✅', color: ['#0A7D4F', '#087F4F'] },
+    quiz_champion: { icon: '🎯', color: ['#F57C00', '#EF6C00'] },
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now - date);
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) > 1 ? 's' : ''} ago`;
+    return `${Math.floor(diffDays / 30)} month${Math.floor(diffDays / 30) > 1 ? 's' : ''} ago`;
+  };
+
+  useEffect(() => {
+    if (child?._id) {
+      fetchAchievements();
+    } else {
+      setLoading(false);
+    }
+  }, [child?._id]);
+
+  const fetchAchievements = async () => {
+    if (!child?._id) return;
+    try {
+      setLoading(true);
+      const response = await parentService.getChildAchievements(child._id);
+      if (response.success && response.data?.achievements) {
+        const formattedAchievements = response.data.achievements.map((achievement, index) => ({
+          id: achievement._id || index,
+          icon: achievementStyles[achievement.type]?.icon || '🏅',
+          title: achievement.title,
+          description: achievement.description,
+          dateEarned: formatDate(achievement.earnedAt),
+          color: achievementStyles[achievement.type]?.color || ['#0A7D4F', '#087F4F'],
+        }));
+        setAchievements(formattedAchievements);
+      }
+    } catch (err) {
+      console.error('Error fetching achievements:', err);
+      setError('Failed to load achievements');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <LinearGradient colors={['#F4FFF5', '#E8F5E9']} style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0A7D4F" />
+          <Text style={styles.loadingText}>Loading achievements...</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient
@@ -84,6 +104,12 @@ const AchievementsRewards = ({ route }) => {
         {/* Achievements Grid */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>All Achievements</Text>
+          {achievements.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>🏅</Text>
+              <Text style={styles.emptyText}>No achievements yet</Text>
+            </View>
+          ) : (
           <View style={styles.achievementsGrid}>
             {achievements.map((achievement) => (
               <LinearGradient
@@ -103,6 +129,7 @@ const AchievementsRewards = ({ route }) => {
               </LinearGradient>
             ))}
           </View>
+          )}
         </View>
 
         {/* Upcoming Achievements */}
@@ -161,6 +188,29 @@ const AchievementsRewards = ({ route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#0A7D4F',
+    fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyIcon: {
+    fontSize: 50,
+    marginBottom: 10,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
   },
   header: {
     padding: 20,

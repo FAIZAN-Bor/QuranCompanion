@@ -1,9 +1,52 @@
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native';
-import React from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
 import LinearGradient from 'react-native-linear-gradient';
+import contentService from '../services/contentService';
 
 const Quran = ({ route, navigation }) => {
-  const { data } = route.params;
+  const [quranData, setQuranData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    fetchQuran();
+  }, []);
+
+  const fetchQuran = async () => {
+    try {
+      setLoading(true);
+      const response = await contentService.getQuranSurahs();
+      setQuranData(response.data?.content || []);
+    } catch (error) {
+      console.error('Quran fetch error:', error);
+      Alert.alert('Error', 'Failed to load Quran surahs.');
+      // Fallback to route params if API fails
+      if (route.params?.data) {
+        setQuranData(route.params.data);
+      } else {
+        setQuranData([]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchQuran();
+    setRefreshing(false);
+  };
+
+  if (loading) {
+    return (
+      <LinearGradient colors={['#F4FFF5', '#E8F5E9']} style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0A7D4F" />
+          <Text style={styles.loadingText}>Loading Quran...</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient
@@ -16,10 +59,14 @@ const Quran = ({ route, navigation }) => {
       </View>
 
       {/* Wrap ALL surah cards in one ScrollView */}
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {data.map((item) => (
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
+        {quranData && quranData.length > 0 ? quranData.map((item) => (
           <TouchableOpacity
-            key={item.id}
+            key={item._id || item.id}
             activeOpacity={0.7}
             onPress={() => navigation.navigate("AllAya", { data: item })}
           >
@@ -30,18 +77,22 @@ const Quran = ({ route, navigation }) => {
               end={{x: 1, y: 1}}
             >
               <View style={styles.cardNumber}>
-                <Text style={styles.numberText}>{item.id}</Text>
+                <Text style={styles.numberText}>{item.number}</Text>
               </View>
               <View style={styles.cardContent}>
                 <View style={styles.cardHeader}>
                   <Text style={styles.englishName}>{item.name}</Text>
-                  <Text style={styles.arabicName}>{item.arabicName}</Text>
+                  <Text style={styles.arabicName}>{item.nameArabic}</Text>
                 </View>
                 <Text style={styles.totalAyahs}>📖 {item.totalAyahs} Ayahs</Text>
               </View>
             </LinearGradient>
           </TouchableOpacity>
-        ))}
+        )) : (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No Quran surahs available</Text>
+          </View>
+        )}
       </ScrollView>
     </LinearGradient>
   );
@@ -54,6 +105,19 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
     paddingTop: 20,
+  },
+
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#0A7D4F',
+    fontWeight: '600',
   },
 
   headerContainer: {
@@ -134,5 +198,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#666",
     fontWeight: "600",
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#999',
+    textAlign: 'center',
   },
 });

@@ -1,9 +1,52 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import React from 'react';
+import { StyleSheet, Text, TouchableOpacity, View, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
 import LinearGradient from 'react-native-linear-gradient';
+import contentService from '../services/contentService';
 
 const Quaida = ({ route, navigation }) => {
-  const { data } = route.params; // receiving quaida data array
+  const [qaidaData, setQaidaData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    fetchQaida();
+  }, []);
+
+  const fetchQaida = async () => {
+    try {
+      setLoading(true);
+      const response = await contentService.getQaidaLessons();
+      setQaidaData(response.data?.content || []);
+    } catch (error) {
+      console.error('Qaida fetch error:', error);
+      Alert.alert('Error', 'Failed to load Qaida lessons.');
+      // Fallback to route params if API fails
+      if (route.params?.data) {
+        setQaidaData(route.params.data);
+      } else {
+        setQaidaData([]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchQaida();
+    setRefreshing(false);
+  };
+
+  if (loading) {
+    return (
+      <LinearGradient colors={['#F4FFF5', '#E8F5E9']} style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0A7D4F" />
+          <Text style={styles.loadingText}>Loading Qaida...</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient
@@ -14,9 +57,14 @@ const Quaida = ({ route, navigation }) => {
         <Text style={styles.header}>Quaida Lessons</Text>
         <Text style={styles.subtitle}>Learn Arabic Alphabet</Text>
       </View>
-      {data.map((item) => (
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
+        {qaidaData && qaidaData.length > 0 ? qaidaData.map((item) => (
         <TouchableOpacity
-          key={item.id}
+          key={item._id || item.id}
           activeOpacity={0.7}
           onPress={() => navigation.navigate('QuidaTaqkti', { data: item })}
         >
@@ -28,14 +76,19 @@ const Quaida = ({ route, navigation }) => {
           >
             <View style={styles.row}>
               <Text style={styles.title}>{item.name}</Text>
-              <Text style={styles.arabicName}>{item.arabicName}</Text>
+              <Text style={styles.arabicName}>{item.nameArabic}</Text>
             </View>
             <Text style={styles.taqti}>
-              📖 Characters: <Text style={{ fontWeight: '800' }}>{item.characters.length}</Text>
+              📖 {item.characters?.length || 0} Characters
             </Text>
           </LinearGradient>
         </TouchableOpacity>
-      ))}
+      )) : (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No Qaida lessons available</Text>
+        </View>
+      )}
+      </ScrollView>
     </LinearGradient>
   );
 };
@@ -46,6 +99,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#0A7D4F',
+    fontWeight: '600',
   },
   headerContainer: {
     marginBottom: 20,
@@ -95,5 +159,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#666',
     fontWeight: '600',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#999',
+    textAlign: 'center',
   },
 });

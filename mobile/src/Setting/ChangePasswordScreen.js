@@ -8,10 +8,13 @@ import {
   Alert,
   Image,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { Formik } from "formik";
 import * as Yup from "yup";
 import LinearGradient from 'react-native-linear-gradient';
+import { useAuth } from '../context/AuthContext';
+import userService from '../services/userService';
 
 // Validation schema
 const ChangePasswordSchema = Yup.object().shape({
@@ -27,14 +30,23 @@ const ChangePasswordSchema = Yup.object().shape({
 });
 
 export default function ChangePasswordScreen() {
+  const { user } = useAuth();
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (values, { resetForm }) => {
-    // Call API to verify current password and update with new password
-    Alert.alert("Success", "Password changed successfully!");
-    resetForm();
+  const handleSubmit = async (values, { resetForm }) => {
+    try {
+      setLoading(true);
+      await userService.changePassword(values.currentPassword, values.newPassword);
+      Alert.alert("Success", "Password changed successfully!");
+      resetForm();
+    } catch (error) {
+      Alert.alert("Error", error.message || "Failed to change password");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -49,12 +61,12 @@ export default function ChangePasswordScreen() {
           <View style={styles.imageWrapper}>
             <Image
               style={styles.profileImage}
-              source={require("../assests/profile.jpeg")}
+              source={user?.profileImage ? { uri: user.profileImage } : require("../assests/profile.jpeg")}
             />
           </View>
           <View style={styles.textWrapper}>
-            <Text style={styles.name}>Farhan Akhtar</Text>
-            <Text style={styles.email}>m.farhanAkhtar04@gmail.com</Text>
+            <Text style={styles.name}>{user?.name || 'User'}</Text>
+            <Text style={styles.email}>{user?.email || 'user@example.com'}</Text>
           </View>
         </View>
 
@@ -68,53 +80,84 @@ export default function ChangePasswordScreen() {
         >
           {({ handleChange, handleBlur, handleSubmit, values, errors, touched }) => (
             <View>
-              <TextInput
-                style={styles.input}
-                placeholder="Current Password"
-                secureTextEntry={!showCurrent}
-                onChangeText={handleChange("currentPassword")}
-                onBlur={handleBlur("currentPassword")}
-                value={values.currentPassword}
-                placeholderTextColor="#566360ff"
-              />
+              {/* Current Password */}
+              <View style={styles.passwordInputContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="Current Password"
+                  secureTextEntry={!showCurrent}
+                  onChangeText={handleChange("currentPassword")}
+                  onBlur={handleBlur("currentPassword")}
+                  value={values.currentPassword}
+                  placeholderTextColor="#999"
+                />
+                <TouchableOpacity 
+                  onPress={() => setShowCurrent(!showCurrent)}
+                  style={styles.iconButton}
+                >
+                  <Text style={styles.eyeIcon}>{showCurrent ? '👁️' : '👁️‍🗨️'}</Text>
+                </TouchableOpacity>
+              </View>
               {errors.currentPassword && touched.currentPassword && (
                 <Text style={styles.error}>{errors.currentPassword}</Text>
               )}
 
-              <TextInput
-                style={styles.input}
-                placeholder="New Password"
-                secureTextEntry={!showNew}
-                onChangeText={handleChange("newPassword")}
-                onBlur={handleBlur("newPassword")}
-                value={values.newPassword}
-                placeholderTextColor="#566360ff"
-              />
+              {/* New Password */}
+              <View style={styles.passwordInputContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="New Password"
+                  secureTextEntry={!showNew}
+                  onChangeText={handleChange("newPassword")}
+                  onBlur={handleBlur("newPassword")}
+                  value={values.newPassword}
+                  placeholderTextColor="#999"
+                />
+                <TouchableOpacity 
+                  onPress={() => setShowNew(!showNew)}
+                  style={styles.iconButton}
+                >
+                  <Text style={styles.eyeIcon}>{showNew ? '👁️' : '👁️‍🗨️'}</Text>
+                </TouchableOpacity>
+              </View>
               {errors.newPassword && touched.newPassword && (
                 <Text style={styles.error}>{errors.newPassword}</Text>
               )}
 
-              <TextInput
-                style={styles.input}
-                placeholder="Confirm New Password"
-                secureTextEntry={!showConfirm}
-                onChangeText={handleChange("confirmPassword")}
-                onBlur={handleBlur("confirmPassword")}
-                value={values.confirmPassword}
-                placeholderTextColor="#566360ff"
-              />
+              {/* Confirm Password */}
+              <View style={styles.passwordInputContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="Confirm New Password"
+                  secureTextEntry={!showConfirm}
+                  onChangeText={handleChange("confirmPassword")}
+                  onBlur={handleBlur("confirmPassword")}
+                  value={values.confirmPassword}
+                  placeholderTextColor="#999"
+                />
+                <TouchableOpacity 
+                  onPress={() => setShowConfirm(!showConfirm)}
+                  style={styles.iconButton}
+                >
+                  <Text style={styles.eyeIcon}>{showConfirm ? '👁️' : '👁️‍🗨️'}</Text>
+                </TouchableOpacity>
+              </View>
               {errors.confirmPassword && touched.confirmPassword && (
                 <Text style={styles.error}>{errors.confirmPassword}</Text>
               )}
 
-              <TouchableOpacity onPress={handleSubmit} activeOpacity={0.8}>
+              <TouchableOpacity onPress={handleSubmit} activeOpacity={0.8} disabled={loading}>
                 <LinearGradient
                   colors={['#0A7D4F', '#0F9D63', '#15B872']}
                   style={styles.button}
                   start={{x: 0, y: 0}}
                   end={{x: 1, y: 0}}
                 >
-                  <Text style={styles.buttonText}>Reset Password</Text>
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.buttonText}>Reset Password</Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
             </View>
@@ -189,6 +232,30 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     fontSize: 16,
     elevation: 3,
+    color: '#000000',
+  },
+  passwordInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    borderRadius: 15,
+    backgroundColor: '#FFFFFF',
+    paddingRight: 10,
+    elevation: 3,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 15,
+    fontSize: 16,
+    color: '#000000',
+  },
+  iconButton: {
+    padding: 10,
+  },
+  eyeIcon: {
+    fontSize: 20,
   },
   button: {
     padding: 16,

@@ -1,83 +1,101 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, Dimensions, ActivityIndicator, RefreshControl } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { BarChart } from 'react-native-chart-kit';
+import parentService from '../services/parentService';
 
 const screenWidth = Dimensions.get('window').width;
 
 const QuizResults = ({ route }) => {
-  const { child } = route.params || { child: { name: 'Child' } };
+  const { child } = route.params || { child: { name: 'Child', _id: null } };
+  const [quizzes, setQuizzes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const quizzes = [
-    {
-      id: 1,
-      title: 'Tajweed Rules Quiz 1',
-      score: 85,
-      maxScore: 100,
-      passed: true,
-      date: '2 days ago',
-      timeSpent: '8 min',
-      badge: '🏆',
-    },
-    {
-      id: 2,
-      title: 'Qaida Level 4 Assessment',
-      score: 92,
-      maxScore: 100,
-      passed: true,
-      date: '5 days ago',
-      timeSpent: '12 min',
-      badge: '⭐',
-    },
-    {
-      id: 3,
-      title: 'Madd Rules Practice',
-      score: 68,
-      maxScore: 100,
-      passed: true,
-      date: '1 week ago',
-      timeSpent: '10 min',
-      badge: null,
-    },
-    {
-      id: 4,
-      title: 'Quran Recitation Test',
-      score: 95,
-      maxScore: 100,
-      passed: true,
-      date: '1 week ago',
-      timeSpent: '15 min',
-      badge: '🥇',
-    },
-    {
-      id: 5,
-      title: 'Basic Tajweed Quiz',
-      score: 78,
-      maxScore: 100,
-      passed: true,
-      date: '2 weeks ago',
-      timeSpent: '7 min',
-      badge: null,
-    },
-  ];
+  useEffect(() => {
+    if (child?._id) {
+      fetchQuizzes();
+    } else {
+      setLoading(false);
+    }
+  }, [child?._id]);
+
+  const fetchQuizzes = async () => {
+    if (!child?._id) return;
+    try {
+      setLoading(true);
+      const response = await parentService.getChildQuizzes(child._id);
+      if (response.success) {
+        setQuizzes(response.data.quizzes || []);
+      }
+    } catch (error) {
+      console.error('Error fetching quizzes:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchQuizzes();
+    setRefreshing(false);
+  };
+
+  const getTimeAgo = (timestamp) => {
+    if (!timestamp) return 'Unknown';
+    const now = new Date();
+    const date = new Date(timestamp);
+    const diffMs = now - date;
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    
+    if (diffHours < 1) return 'Just now';
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return `${Math.floor(diffDays / 7)} week(s) ago`;
+  };
+
+  const getBadge = (percentage) => {
+    if (percentage === 100) return '🥇';
+    if (percentage >= 90) return '🏆';
+    if (percentage >= 80) return '⭐';
+    return null;
+  };
 
   const chartData = {
-    labels: ['Quiz 1', 'Q2', 'Q3', 'Q4', 'Q5'],
+    labels: quizzes.slice(0, 5).map((_, i) => `Q${i + 1}`),
     datasets: [{
-      data: quizzes.map(q => q.score),
+      data: quizzes.slice(0, 5).map(q => q.percentage || 0),
     }],
   };
 
-  const avgScore = (quizzes.reduce((sum, q) => sum + q.score, 0) / quizzes.length).toFixed(0);
-  const bestScore = Math.max(...quizzes.map(q => q.score));
-  const weakestScore = Math.min(...quizzes.map(q => q.score));
+  const avgScore = quizzes.length > 0 
+    ? (quizzes.reduce((sum, q) => sum + (q.percentage || 0), 0) / quizzes.length).toFixed(0) 
+    : 0;
+  const bestScore = quizzes.length > 0 ? Math.max(...quizzes.map(q => q.percentage || 0)) : 0;
+  const weakestScore = quizzes.length > 0 ? Math.min(...quizzes.map(q => q.percentage || 0)) : 0;
+
+  if (loading) {
+    return (
+      <LinearGradient colors={['#F4FFF5', '#E8F5E9']} style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0A7D4F" />
+        <Text style={styles.loadingText}>Loading quiz results...</Text>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient
       colors={['#F4FFF5', '#E8F5E9']}
       style={styles.container}
     >
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#0A7D4F']} />
+        }
+      >
         
         {/* Header */}
         <View style={styles.header}>
@@ -111,6 +129,7 @@ const QuizResults = ({ route }) => {
         </View>
 
         {/* Score Chart */}
+        {quizzes.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Score Progression</Text>
           <View style={styles.chartContainer}>
@@ -135,44 +154,54 @@ const QuizResults = ({ route }) => {
             />
           </View>
         </View>
+        )}
 
         {/* Quiz List */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>All Quiz Attempts</Text>
-          {quizzes.map((quiz) => (
+          {quizzes.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>📝</Text>
+              <Text style={styles.emptyText}>No quizzes completed yet!</Text>
+            </View>
+          ) : quizzes.map((quiz) => (
             <LinearGradient
-              key={quiz.id}
+              key={quiz._id}
               colors={['#FFFFFF', '#F1F8E9']}
               style={styles.quizCard}
             >
               <View style={styles.quizHeader}>
                 <View style={styles.quizTitleContainer}>
-                  <Text style={styles.quizTitle}>{quiz.title}</Text>
-                  {quiz.badge && <Text style={styles.badge}>{quiz.badge}</Text>}
+                  <Text style={styles.quizTitle}>{quiz.quizId?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</Text>
+                  {getBadge(quiz.percentage) && <Text style={styles.badge}>{getBadge(quiz.percentage)}</Text>}
                 </View>
                 <View style={[
                   styles.scoreCircle,
-                  { backgroundColor: quiz.score >= 80 ? '#0A7D4F' : quiz.score >= 60 ? '#F57C00' : '#E53935' }
+                  { backgroundColor: quiz.percentage >= 80 ? '#0A7D4F' : quiz.percentage >= 60 ? '#F57C00' : '#E53935' }
                 ]}>
-                  <Text style={styles.scoreText}>{quiz.score}</Text>
-                  <Text style={styles.maxScoreText}>/{quiz.maxScore}</Text>
+                  <Text style={styles.scoreText}>{quiz.percentage}</Text>
+                  <Text style={styles.maxScoreText}>%</Text>
                 </View>
               </View>
 
               <View style={styles.quizDetails}>
                 <View style={styles.detailItem}>
                   <Text style={styles.detailLabel}>Status:</Text>
-                  <Text style={[styles.detailValue, styles.passText]}>
+                  <Text style={[styles.detailValue, quiz.passed ? styles.passText : styles.failText]}>
                     {quiz.passed ? '✓ Passed' : '✗ Failed'}
                   </Text>
                 </View>
                 <View style={styles.detailItem}>
                   <Text style={styles.detailLabel}>Date:</Text>
-                  <Text style={styles.detailValue}>{quiz.date}</Text>
+                  <Text style={styles.detailValue}>{getTimeAgo(quiz.completedAt)}</Text>
                 </View>
                 <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>Time Spent:</Text>
-                  <Text style={styles.detailValue}>{quiz.timeSpent}</Text>
+                  <Text style={styles.detailLabel}>Score:</Text>
+                  <Text style={styles.detailValue}>{quiz.score}/{quiz.totalQuestions}</Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Coins Earned:</Text>
+                  <Text style={styles.detailValue}>🪙 {quiz.coinsEarned}</Text>
                 </View>
               </View>
             </LinearGradient>
@@ -187,6 +216,32 @@ const QuizResults = ({ route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#0A7D4F',
+    fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyIcon: {
+    fontSize: 50,
+    marginBottom: 10,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  failText: {
+    color: '#E53935',
   },
   header: {
     padding: 20,

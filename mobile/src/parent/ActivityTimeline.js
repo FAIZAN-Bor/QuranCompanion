@@ -1,112 +1,163 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import parentService from '../services/parentService';
 
 const ActivityTimeline = ({ route }) => {
-  const { child } = route.params || { child: { name: 'Child' } };
+  const childFromParams = route?.params?.child;
+  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ total: 0, lessons: 0, badges: 0 });
+  const [children, setChildren] = useState([]);
+  const [selectedChild, setSelectedChild] = useState(childFromParams || null);
 
-  const activities = [
-    {
-      id: 1,
-      type: 'lesson',
-      title: 'Completed Qaida Lesson 15',
-      subtitle: 'Accuracy: 92%',
-      time: '2 hours ago',
-      date: 'Today',
-      icon: '📚',
-      color: ['#0A7D4F', '#15B872'],
-    },
-    {
-      id: 2,
-      type: 'recording',
-      title: 'Recorded Surah Al-Ikhlas',
-      subtitle: 'Duration: 45 seconds',
-      time: '5 hours ago',
-      date: 'Today',
-      icon: '🎤',
-      color: ['#1976D2', '#42A5F5'],
-    },
-    {
-      id: 3,
-      type: 'badge',
-      title: 'Earned Daily Streak Badge',
-      subtitle: '7 days consecutive practice',
-      time: '8 hours ago',
-      date: 'Today',
-      icon: '🔥',
-      color: ['#E53935', '#EF5350'],
-    },
-    {
-      id: 4,
-      type: 'quiz',
-      title: 'Completed Tajweed Quiz',
-      subtitle: 'Score: 85%',
-      time: 'Yesterday at 6:30 PM',
-      date: 'Yesterday',
-      icon: '✍️',
-      color: ['#7B1FA2', '#AB47BC'],
-    },
-    {
-      id: 5,
-      type: 'lesson',
-      title: 'Completed Quran Lesson 8',
-      subtitle: 'Accuracy: 88%',
-      time: 'Yesterday at 3:15 PM',
-      date: 'Yesterday',
-      icon: '📖',
-      color: ['#0A7D4F', '#15B872'],
-    },
-    {
-      id: 6,
-      type: 'recording',
-      title: 'Recorded Dua After Wudu',
-      subtitle: 'Duration: 28 seconds',
-      time: 'Yesterday at 10:00 AM',
-      date: 'Yesterday',
-      icon: '🎤',
-      color: ['#1976D2', '#42A5F5'],
-    },
-    {
-      id: 7,
-      type: 'badge',
-      title: 'Earned Perfect Recitation Badge',
-      subtitle: '100% accuracy achieved',
-      time: '2 days ago at 4:20 PM',
-      date: '2 days ago',
-      icon: '🏆',
-      color: ['#FFD700', '#FFA000'],
-    },
-    {
-      id: 8,
-      type: 'lesson',
-      title: 'Completed Dua Lesson 5',
-      subtitle: 'Accuracy: 95%',
-      time: '3 days ago at 7:45 PM',
-      date: '3 days ago',
-      icon: '🤲',
-      color: ['#0A7D4F', '#15B872'],
-    },
-    {
-      id: 9,
-      type: 'quiz',
-      title: 'Completed Qaida Quiz',
-      subtitle: 'Score: 90%',
-      time: '4 days ago at 5:00 PM',
-      date: '4 days ago',
-      icon: '✍️',
-      color: ['#7B1FA2', '#AB47BC'],
-    },
-    {
-      id: 10,
-      type: 'recording',
-      title: 'Recorded Surah Al-Nas',
-      subtitle: 'Duration: 1 minute',
-      time: '5 days ago at 6:30 PM',
-      date: '5 days ago',
-      icon: '🎤',
-      color: ['#1976D2', '#42A5F5'],
-    },
-  ];
+  const formatTimeAgo = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffHours < 1) return 'Just now';
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    if (diffDays === 1) return 'Yesterday';
+    return `${diffDays} days ago`;
+  };
+
+  const getDateLabel = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    return `${diffDays} days ago`;
+  };
+
+  useEffect(() => {
+    if (!childFromParams) {
+      fetchChildren();
+    } else {
+      setSelectedChild(childFromParams);
+    }
+  }, [childFromParams]);
+
+  useEffect(() => {
+    if (selectedChild?._id) {
+      fetchActivities();
+    }
+  }, [selectedChild]);
+
+  const fetchChildren = async () => {
+    try {
+      const response = await parentService.getChildren();
+      // response is { success, data: { children: [{ child: {...} }, ...] } }
+      if (response.success && response.data?.children?.length > 0) {
+        const childrenList = response.data.children.map(link => ({
+          _id: link.child._id,
+          name: link.child.name,
+          email: link.child.email,
+          ...link.child
+        }));
+        setChildren(childrenList);
+        setSelectedChild(childrenList[0]);
+      } else {
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error('Error fetching children:', err);
+      setLoading(false);
+    }
+  };
+
+  const fetchActivities = async () => {
+    if (!selectedChild?._id) return;
+    try {
+      setLoading(true);
+      
+      // Fetch all data in parallel
+      const [progressRes, quizzesRes, achievementsRes] = await Promise.all([
+        parentService.getChildProgress(selectedChild._id),
+        parentService.getChildQuizzes(selectedChild._id),
+        parentService.getChildAchievements(selectedChild._id),
+      ]);
+
+      const allActivities = [];
+
+      // Add lessons from progress (progressRes.data is { progress, summary })
+      // Use progress array which has completedAt dates
+      if (progressRes.data?.progress) {
+        progressRes.data.progress.forEach((lesson, index) => {
+          if (lesson.completedAt) {
+            allActivities.push({
+              id: `lesson-${index}`,
+              type: 'lesson',
+              title: `Completed ${lesson.module || 'Lesson'}`,
+              subtitle: `Accuracy: ${lesson.accuracy || 0}%`,
+              time: formatTimeAgo(lesson.completedAt),
+              date: getDateLabel(lesson.completedAt),
+              timestamp: new Date(lesson.completedAt),
+              icon: lesson.module === 'Quran' ? '📖' : lesson.module === 'Dua' ? '🤲' : '📚',
+              color: ['#0A7D4F', '#15B872'],
+            });
+          }
+        });
+      }
+
+      // Add quizzes (quizzesRes.data is { quizzes })
+      if (quizzesRes.data?.quizzes) {
+        quizzesRes.data.quizzes.forEach((quiz, index) => {
+          allActivities.push({
+            id: `quiz-${index}`,
+            type: 'quiz',
+            title: `Completed ${quiz.module || 'Quiz'}`,
+            subtitle: `Score: ${quiz.score}%`,
+            time: formatTimeAgo(quiz.completedAt),
+            date: getDateLabel(quiz.completedAt),
+            timestamp: new Date(quiz.completedAt),
+            icon: '✍️',
+            color: ['#7B1FA2', '#AB47BC'],
+          });
+        });
+      }
+
+      // Add achievements (achievementsRes.data is { achievements })
+      if (achievementsRes.data?.achievements) {
+        achievementsRes.data.achievements.forEach((achievement, index) => {
+          allActivities.push({
+            id: `badge-${index}`,
+            type: 'badge',
+            title: `Earned ${achievement.title}`,
+            subtitle: achievement.description,
+            time: formatTimeAgo(achievement.earnedAt),
+            date: getDateLabel(achievement.earnedAt),
+            timestamp: new Date(achievement.earnedAt),
+            icon: '🏆',
+            color: ['#FFD700', '#FFA000'],
+          });
+        });
+      }
+
+      // Sort by timestamp (newest first)
+      allActivities.sort((a, b) => b.timestamp - a.timestamp);
+
+      // Calculate stats
+      const lessonCount = allActivities.filter(a => a.type === 'lesson').length;
+      const badgeCount = allActivities.filter(a => a.type === 'badge').length;
+
+      setStats({
+        total: allActivities.length,
+        lessons: lessonCount,
+        badges: badgeCount,
+      });
+
+      setActivities(allActivities);
+    } catch (err) {
+      console.error('Error fetching activities:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Group activities by date
   const groupedActivities = activities.reduce((acc, activity) => {
@@ -116,6 +167,28 @@ const ActivityTimeline = ({ route }) => {
     acc[activity.date].push(activity);
     return acc;
   }, {});
+
+  if (loading) {
+    return (
+      <LinearGradient colors={['#F4FFF5', '#E8F5E9']} style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0A7D4F" />
+          <Text style={styles.loadingText}>Loading activities...</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
+
+  if (!selectedChild) {
+    return (
+      <LinearGradient colors={['#F4FFF5', '#E8F5E9']} style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.emptyIcon}>👶</Text>
+          <Text style={styles.emptyText}>No child linked yet</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient
@@ -127,7 +200,7 @@ const ActivityTimeline = ({ route }) => {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Activity Timeline</Text>
-          <Text style={styles.subtitle}>{child.name}'s Recent Activities</Text>
+          <Text style={styles.subtitle}>{selectedChild.name}'s Recent Activities</Text>
         </View>
 
         {/* Summary Stats */}
@@ -136,7 +209,7 @@ const ActivityTimeline = ({ route }) => {
             colors={['#FFFFFF', '#E3F2FD']}
             style={styles.summaryCard}
           >
-            <Text style={styles.summaryNumber}>10</Text>
+            <Text style={styles.summaryNumber}>{stats.total}</Text>
             <Text style={styles.summaryLabel}>Activities</Text>
             <Text style={styles.summarySubtext}>Last 7 days</Text>
           </LinearGradient>
@@ -145,7 +218,7 @@ const ActivityTimeline = ({ route }) => {
             colors={['#FFFFFF', '#F1F8E9']}
             style={styles.summaryCard}
           >
-            <Text style={styles.summaryNumber}>5</Text>
+            <Text style={styles.summaryNumber}>{stats.lessons}</Text>
             <Text style={styles.summaryLabel}>Lessons</Text>
             <Text style={styles.summarySubtext}>Completed</Text>
           </LinearGradient>
@@ -154,7 +227,7 @@ const ActivityTimeline = ({ route }) => {
             colors={['#FFFFFF', '#FCE4EC']}
             style={styles.summaryCard}
           >
-            <Text style={styles.summaryNumber}>2</Text>
+            <Text style={styles.summaryNumber}>{stats.badges}</Text>
             <Text style={styles.summaryLabel}>Badges</Text>
             <Text style={styles.summarySubtext}>Earned</Text>
           </LinearGradient>
@@ -162,7 +235,13 @@ const ActivityTimeline = ({ route }) => {
 
         {/* Timeline */}
         <View style={styles.timelineContainer}>
-          {Object.keys(groupedActivities).map((date) => (
+          {activities.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>📅</Text>
+              <Text style={styles.emptyText}>No recent activities</Text>
+            </View>
+          ) : (
+          Object.keys(groupedActivities).map((date) => (
             <View key={date} style={styles.dateSection}>
               <Text style={styles.dateHeader}>{date}</Text>
               {groupedActivities[date].map((activity, index) => (
@@ -192,7 +271,8 @@ const ActivityTimeline = ({ route }) => {
                 </View>
               ))}
             </View>
-          ))}
+          ))
+          )}
         </View>
 
         {/* Load More */}
@@ -213,6 +293,29 @@ const ActivityTimeline = ({ route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#0A7D4F',
+    fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyIcon: {
+    fontSize: 50,
+    marginBottom: 10,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
   },
   header: {
     padding: 20,

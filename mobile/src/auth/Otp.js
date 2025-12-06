@@ -1,12 +1,40 @@
 // OtpScreen.js
 
-import React, { useRef, useState } from 'react';
-import { View, Text, TextInput, Image, TouchableOpacity, StyleSheet, Keyboard } from 'react-native';
+import React, { useRef, useState, useEffect } from 'react';
+import { View, Text, TextInput, Image, TouchableOpacity, StyleSheet, Keyboard, Alert, ActivityIndicator } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import { useAuth } from '../context/AuthContext';
+import authService from '../services/authService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export default function Otp({ navigation }) {
-  const [otp, setOtp] = useState(['', '', '', '']);
+export default function Otp({ navigation, route }) {
+  const [otp, setOtp] = useState(['', '', '', '']); // 4 digits for OTP
+  const [isLoading, setIsLoading] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [email, setEmail] = useState('');
+  const [userRole, setUserRole] = useState('child');
+  const { verifyOTP } = useAuth();
   const inputRefs = useRef([]);
+
+  useEffect(() => {
+    // Get email and role from route params or AsyncStorage
+    const getEmail = async () => {
+      const emailParam = route.params?.email;
+      const roleParam = route.params?.role || 'child';
+      if (emailParam) {
+        setEmail(emailParam);
+        setUserRole(roleParam);
+      } else {
+        const storedEmail = await AsyncStorage.getItem('pendingEmail');
+        const storedRole = await AsyncStorage.getItem('pendingRole');
+        if (storedEmail) {
+          setEmail(storedEmail);
+          setUserRole(storedRole || 'child');
+        }
+      }
+    };
+    getEmail();
+  }, [route.params]);
 
   const handleChange = (text, index) => {
     if (/^\d$/.test(text)) {
@@ -27,10 +55,65 @@ export default function Otp({ navigation }) {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const enteredOtp = otp.join('');
-    console.log('Entered OTP:', enteredOtp);
-    // Add your verification logic here
+    
+    if (enteredOtp.length !== 4) {
+      Alert.alert('Error', 'Please enter the complete 4-digit OTP');
+      return;
+    }
+
+    if (!email) {
+      Alert.alert('Error', 'Email not found. Please sign up again.');
+      navigation.navigate('SignUp');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const response = await verifyOTP(email, enteredOtp);
+      
+      // Clear pending email and role
+      await AsyncStorage.removeItem('pendingEmail');
+      await AsyncStorage.removeItem('pendingRole');
+      
+      Alert.alert('Success', 'Account verified successfully!');
+      
+      // Navigate based on user role
+      if (userRole === 'parent') {
+        // Parent goes directly to parent dashboard (skip ParentLogin screen)
+        navigation.replace('ParentNavigator', {
+          screen: 'ParentMain'
+        });
+      } else {
+        // Child/Learner goes to survey first
+        navigation.replace('LearnerSurvey');
+      }
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Invalid OTP. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendOTP = async () => {
+    if (!email) {
+      Alert.alert('Error', 'Email not found. Please sign up again.');
+      return;
+    }
+
+    try {
+      setIsResending(true);
+      const response = await authService.resendOTP(email);
+      Alert.alert('Success', 'OTP has been resent to your email');
+      // Clear OTP input
+      setOtp(['', '', '', '']);
+      inputRefs.current[0]?.focus();
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Failed to resend OTP');
+    } finally {
+      setIsResending(false);
+    }
   };
 
   return (
@@ -41,7 +124,10 @@ export default function Otp({ navigation }) {
       <View style={styles.container}>
          <Image style={{ alignSelf:'center', marginTop:5, marginBottom:5, width:70,height:70,borderRadius:10}} source={require('../assests/Logo.jpg')}/>
         <Text style={styles.title}>OTP Verification</Text>
-        <Text style={styles.subtitle}>Enter the 4-digit code sent to your phone</Text>
+        <Text style={styles.subtitle}>Enter the 4-digit code sent to your email</Text>
+        {email ? (
+          <Text style={styles.emailText}>{email}</Text>
+        ) : null}
 
         <View style={styles.otpContainer}>
           {otp.map((digit, index) => (
@@ -53,23 +139,34 @@ export default function Otp({ navigation }) {
               value={digit}
               onChangeText={(text) => handleChange(text, index)}
               ref={(ref) => (inputRefs.current[index] = ref)}
+              editable={!isLoading}
             />
           ))}
         </View>
 
-        <TouchableOpacity onPress={() => navigation.navigate('LearnerSurvey')} activeOpacity={0.8}>
+        <TouchableOpacity 
+          onPress={handleSubmit} 
+          activeOpacity={0.8}
+          disabled={isLoading}
+        >
           <LinearGradient
             colors={['#0A7D4F', '#0F9D63', '#15B872']}
             style={styles.button}
             start={{x: 0, y: 0}}
             end={{x: 1, y: 0}}
           >
-            <Text style={styles.buttonText}>Verify OTP</Text>
+            {isLoading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.buttonText}>Verify OTP</Text>
+            )}
           </LinearGradient>
         </TouchableOpacity>
 
-        <TouchableOpacity>
-          <Text style={styles.resend}>Resend OTP</Text>
+        <TouchableOpacity onPress={handleResendOTP} disabled={isResending}>
+          <Text style={styles.resend}>
+            {isResending ? 'Sending...' : 'Resend OTP'}
+          </Text>
         </TouchableOpacity>
       </View>
     </LinearGradient>
@@ -111,7 +208,7 @@ const styles = StyleSheet.create({
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    width: '85%',
+    width: '80%',
     marginBottom: 35,
   },
   otpInput: {
