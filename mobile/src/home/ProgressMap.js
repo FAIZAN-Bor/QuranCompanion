@@ -1,6 +1,6 @@
 // ProgressMap.js - Gamified Learning Path Screen with Islamic Aesthetic
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,21 +9,74 @@ import {
   ScrollView,
   Dimensions,
   Image,
-  Animated
+  Animated,
+  ActivityIndicator,
+  Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { progressMapLevels, calculateOverallProgress } from '../assests/data/progressMapData';
+import progressService from '../services/progressService';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 const ProgressMap = ({ navigation }) => {
-  const [levels] = useState(progressMapLevels);
-  const overallProgress = calculateOverallProgress();
+  const [levels, setLevels] = useState(progressMapLevels);
+  const [overallProgress, setOverallProgress] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [pulseAnim] = useState(new Animated.Value(1));
 
-  // Pulse animation for active nodes
-  React.useEffect(() => {
+  useEffect(() => {
+    fetchProgress();
+    startPulseAnimation();
+  }, []);
+
+  const fetchProgress = async () => {
+    try {
+      setLoading(true);
+      const response = await progressService.getProgress({
+        module: 'qaida'
+      });
+      
+      // Update levels with backend data
+      if (response.data && response.data.length > 0) {
+        const updatedLevels = levels.map(level => {
+          const progressData = response.data.find(p => p.levelId === level.id);
+          if (progressData) {
+            return {
+              ...level,
+              status: progressData.status,
+              progress: progressData.completionPercentage || level.progress
+            };
+          }
+          return level;
+        });
+        setLevels(updatedLevels);
+        
+        // Calculate overall progress
+        const totalProgress = updatedLevels.reduce((sum, level) => sum + (level.progress || 0), 0);
+        setOverallProgress(Math.round(totalProgress / updatedLevels.length));
+      } else {
+        // Use mock data calculation
+        setOverallProgress(calculateOverallProgress());
+      }
+    } catch (error) {
+      console.error('Progress fetch error:', error);
+      // Fallback to local data
+      setOverallProgress(calculateOverallProgress());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchProgress();
+    setRefreshing(false);
+  };
+
+  const startPulseAnimation = () => {
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -38,7 +91,7 @@ const ProgressMap = ({ navigation }) => {
         }),
       ])
     ).start();
-  }, []);
+  };
 
   const handleLevelPress = (level) => {
     if (level.status === 'locked') {
@@ -244,6 +297,13 @@ const ProgressMap = ({ navigation }) => {
   return (
     <LinearGradient colors={['#F0FDF4', '#ECFDF5', '#D1FAE5']} style={styles.wrapper}>
       <SafeAreaView style={styles.container}>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#0A7D4F" />
+            <Text style={styles.loadingText}>Loading your progress...</Text>
+          </View>
+        ) : (
+          <>
         {/* Enhanced Header with Islamic Pattern */}
         <View style={styles.header}>
           <View style={styles.headerPattern} />
@@ -275,6 +335,8 @@ const ProgressMap = ({ navigation }) => {
           style={styles.mapScrollView}
           contentContainerStyle={styles.mapContent}
           showsVerticalScrollIndicator={false}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
         >
           {/* Enhanced Start Badge */}
           <View style={styles.startBadge}>
@@ -336,6 +398,8 @@ const ProgressMap = ({ navigation }) => {
             </LinearGradient>
           </View>
         </ScrollView>
+        </>
+        )}
       </SafeAreaView>
     </LinearGradient>
   );
@@ -347,6 +411,17 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#0A7D4F',
+    fontWeight: '600',
   },
   header: {
     paddingHorizontal: 20,

@@ -1,34 +1,96 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import parentService from '../services/parentService';
 
 const MistakeLog = ({ route }) => {
-  const { child } = route.params || { child: { name: 'Child' } };
+  const { child } = route.params || { child: { name: 'Child', _id: null } };
+  const [mistakes, setMistakes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const mistakes = [
-    { id: 1, word: 'قَلْقَلَة', rule: 'Qalqalah', count: 5, lastOccurred: 'Yesterday', severity: 'high' },
-    { id: 2, word: 'إِخْفَاء', rule: 'Ikhfa', count: 8, lastOccurred: '2 days ago', severity: 'high' },
-    { id: 3, word: 'إِدْغَام', rule: 'Idgham', count: 3, lastOccurred: '3 days ago', severity: 'medium' },
-    { id: 4, word: 'مَدّ', rule: 'Madd', count: 4, lastOccurred: 'Today', severity: 'high' },
-    { id: 5, word: 'غُنَّة', rule: 'Ghunna', count: 2, lastOccurred: '1 week ago', severity: 'low' },
-    { id: 6, word: 'تَفْخِيم', rule: 'Tafkheem', count: 3, lastOccurred: '4 days ago', severity: 'medium' },
-  ];
+  useEffect(() => {
+    if (child?._id) {
+      fetchMistakes();
+    } else {
+      setLoading(false);
+    }
+  }, [child?._id]);
+
+  const fetchMistakes = async () => {
+    if (!child?._id) return;
+    try {
+      setLoading(true);
+      const response = await parentService.getChildMistakes(child._id);
+      if (response.success) {
+        setMistakes(response.data.mistakes || []);
+      }
+    } catch (error) {
+      console.error('Error fetching mistakes:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchMistakes();
+    setRefreshing(false);
+  };
 
   const getSeverityColor = (severity) => {
     switch (severity) {
-      case 'high': return '#E53935';
-      case 'medium': return '#F57C00';
-      case 'low': return '#FDD835';
+      case 'major': return '#E53935';
+      case 'moderate': return '#F57C00';
+      case 'minor': return '#FDD835';
       default: return '#666';
     }
   };
+
+  const getTimeAgo = (timestamp) => {
+    if (!timestamp) return 'Unknown';
+    const now = new Date();
+    const date = new Date(timestamp);
+    const diffMs = now - date;
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    
+    if (diffHours < 1) return 'Just now';
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return `${Math.floor(diffDays / 7)} week(s) ago`;
+  };
+
+  const unresolvedCount = mistakes.filter(m => !m.isResolved).length;
+  const topMistakeType = mistakes.length > 0 
+    ? mistakes.reduce((acc, m) => {
+        acc[m.mistakeType] = (acc[m.mistakeType] || 0) + 1;
+        return acc;
+      }, {})
+    : {};
+  const mostCommonType = Object.keys(topMistakeType).sort((a, b) => topMistakeType[b] - topMistakeType[a])[0] || 'None';
+
+  if (loading) {
+    return (
+      <LinearGradient colors={['#F4FFF5', '#E8F5E9']} style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0A7D4F" />
+        <Text style={styles.loadingText}>Loading mistakes...</Text>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient
       colors={['#F4FFF5', '#E8F5E9']}
       style={styles.container}
     >
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#0A7D4F']} />
+        }
+      >
         
         {/* Header */}
         <View style={styles.header}>
@@ -42,9 +104,9 @@ const MistakeLog = ({ route }) => {
             colors={['#FFFFFF', '#FFEBEE']}
             style={styles.summaryCard}
           >
-            <Text style={styles.summaryTitle}>Total Mistakes This Week</Text>
-            <Text style={styles.summaryCount}>25</Text>
-            <Text style={styles.summaryNote}>Focus on Ikhfa and Qalqalah rules</Text>
+            <Text style={styles.summaryTitle}>Unresolved Mistakes</Text>
+            <Text style={styles.summaryCount}>{unresolvedCount}</Text>
+            <Text style={styles.summaryNote}>Focus on {mostCommonType} errors</Text>
           </LinearGradient>
         </View>
 
@@ -52,35 +114,48 @@ const MistakeLog = ({ route }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Detailed Mistake Log</Text>
           
-          {mistakes.map((mistake) => (
+          {mistakes.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>✨</Text>
+              <Text style={styles.emptyText}>No mistakes recorded yet!</Text>
+            </View>
+          ) : mistakes.map((mistake) => (
             <LinearGradient
-              key={mistake.id}
-              colors={['#FFFFFF', '#F9F9F9']}
+              key={mistake._id}
+              colors={mistake.isResolved ? ['#F1F8E9', '#E8F5E9'] : ['#FFFFFF', '#F9F9F9']}
               style={styles.mistakeCard}
             >
               <View style={styles.mistakeHeader}>
                 <View style={styles.wordContainer}>
-                  <Text style={styles.arabicWord}>{mistake.word}</Text>
+                  <Text style={styles.arabicWord}>{mistake.title}</Text>
                   <View style={[styles.severityBadge, { backgroundColor: getSeverityColor(mistake.severity) }]}>
                     <Text style={styles.severityText}>{mistake.severity.toUpperCase()}</Text>
                   </View>
                 </View>
-                <View style={styles.countBadge}>
-                  <Text style={styles.countText}>{mistake.count}x</Text>
-                </View>
+                {mistake.isResolved && (
+                  <View style={styles.resolvedBadge}>
+                    <Text style={styles.resolvedText}>✓ Resolved</Text>
+                  </View>
+                )}
               </View>
 
               <View style={styles.mistakeDetails}>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Rule Violated:</Text>
-                  <Text style={styles.detailValue}>{mistake.rule}</Text>
+                  <Text style={styles.detailLabel}>Type:</Text>
+                  <Text style={styles.detailValue}>{mistake.mistakeType}</Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Last Occurred:</Text>
-                  <Text style={styles.detailValue}>{mistake.lastOccurred}</Text>
+                  <Text style={styles.detailLabel}>Module:</Text>
+                  <Text style={styles.detailValue}>{mistake.module}</Text>
                 </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Occurred:</Text>
+                  <Text style={styles.detailValue}>{getTimeAgo(mistake.timestamp)}</Text>
+                </View>
+                <Text style={styles.descriptionText}>{mistake.description}</Text>
               </View>
 
+              {!mistake.isResolved && (
               <TouchableOpacity activeOpacity={0.8}>
                 <LinearGradient
                   colors={['#0A7D4F', '#15B872']}
@@ -91,6 +166,7 @@ const MistakeLog = ({ route }) => {
                   <Text style={styles.practiceButtonText}>Practice This ▶</Text>
                 </LinearGradient>
               </TouchableOpacity>
+              )}
             </LinearGradient>
           ))}
         </View>
@@ -103,6 +179,46 @@ const MistakeLog = ({ route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#0A7D4F',
+    fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyIcon: {
+    fontSize: 50,
+    marginBottom: 10,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  resolvedBadge: {
+    backgroundColor: '#0A7D4F',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  resolvedText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  descriptionText: {
+    fontSize: 13,
+    color: '#666',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   header: {
     padding: 20,

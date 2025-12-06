@@ -29,19 +29,11 @@ const LevelDetail = ({ route, navigation }) => {
 
     // Navigate to appropriate lesson screen based on module
     if (level.module === 'Qaida') {
-      // Navigate to Quaida screen with the appropriate data
-      if (level.quidaData && level.quidaData.length > 0) {
-        navigation.navigate('Quaida', { data: level.quidaData });
-      } else {
-        Alert.alert('No Data', 'Lesson content is not available yet.');
-      }
+      // Navigate to Quaida screen - will load from backend
+      navigation.navigate('Quaida');
     } else if (level.module === 'Quran') {
-      // Navigate to Quran screen with the appropriate data
-      if (level.quranData && level.quranData.length > 0) {
-        navigation.navigate('Quran', { data: level.quranData });
-      } else {
-        Alert.alert('No Data', 'Surah content is not available yet.');
-      }
+      // Navigate to Quran screen - will load from backend
+      navigation.navigate('Quran');
     }
   };
 

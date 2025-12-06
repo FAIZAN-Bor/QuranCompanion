@@ -1,8 +1,9 @@
-import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Image } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Image, Alert, ActivityIndicator } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
 import LinearGradient from 'react-native-linear-gradient';
+import { useAuth } from '../context/AuthContext';
 
 // Validation Schema
 const LoginSchema = Yup.object().shape({
@@ -16,6 +17,29 @@ const LoginSchema = Yup.object().shape({
 });
 
 export default function Login({navigation}) {
+  const { login } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleLogin = async (values) => {
+    try {
+      setIsLoading(true);
+      const response = await login(values.email, values.password);
+      
+      Alert.alert('Success', 'Logged in successfully!');
+      
+      // Navigate based on user role
+      if (response.data.user.role === 'parent') {
+        navigation.navigate('ParentNavigator');
+      } else {
+        navigation.navigate('BottomTabNavigator');
+      }
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Login failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <LinearGradient
       colors={['#E8F5E9', '#F1F8E9', '#FFF9C4']}
@@ -31,10 +55,7 @@ export default function Login({navigation}) {
           <Formik
             initialValues={{ email: "", password: "" }}
             validationSchema={LoginSchema}
-            onSubmit={(values) => {
-              console.log("Login Values:", values);
-              navigation.navigate('Home');
-            }}
+            onSubmit={handleLogin}
           >
             {({ handleChange, handleBlur, handleSubmit, values, errors, touched }) => (
               <>
@@ -48,6 +69,7 @@ export default function Login({navigation}) {
                   onBlur={handleBlur("email")}
                   keyboardType="email-address"
                   autoCapitalize="none"
+                  editable={!isLoading}
                 />
                 {errors.email && touched.email && (
                   <Text style={styles.errorText}>{errors.email}</Text>
@@ -62,6 +84,7 @@ export default function Login({navigation}) {
                   onChangeText={handleChange("password")}
                   onBlur={handleBlur("password")}
                   secureTextEntry={true}
+                  editable={!isLoading}
                 />
                 {errors.password && touched.password && (
                   <Text style={styles.errorText}>{errors.password}</Text>
@@ -71,15 +94,23 @@ export default function Login({navigation}) {
                   <Text style={styles.forgot}>Forgot Password?</Text>
                 </TouchableOpacity>
 
-                {/* Login Button - direct to Home (no survey) */}
-                <TouchableOpacity onPress={() => navigation.navigate('BottomTabNavigator')} activeOpacity={0.8}>
+                {/* Login Button */}
+                <TouchableOpacity 
+                  onPress={handleSubmit} 
+                  activeOpacity={0.8}
+                  disabled={isLoading}
+                >
                   <LinearGradient
                     colors={['#0A7D4F', '#0F9D63', '#15B872']}
                     style={styles.btn}
                     start={{x: 0, y: 0}}
                     end={{x: 1, y: 0}}
                   >
-                    <Text style={styles.btnText}>Login</Text>
+                    {isLoading ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.btnText}>Login</Text>
+                    )}
                   </LinearGradient>
                 </TouchableOpacity>
 
@@ -88,14 +119,6 @@ export default function Login({navigation}) {
                   <Text style={styles.signupText}>Don't have an account? </Text>
                   <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
                     <Text style={styles.signupLink}>SignUp</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Parent Login Link */}
-                <View style={styles.parentLoginContainer}>
-                  <Text style={styles.parentLoginText}>Are you a parent? </Text>
-                  <TouchableOpacity onPress={() => navigation.navigate('ParentNavigator')}>
-                    <Text style={styles.parentLoginLink}>Login as Parent</Text>
                   </TouchableOpacity>
                 </View>
                 

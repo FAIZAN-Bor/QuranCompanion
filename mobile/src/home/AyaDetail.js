@@ -1,9 +1,94 @@
-import { StyleSheet, Text, View, Image, TouchableOpacity } from 'react-native';
-import React from 'react';
+import { StyleSheet, Text, View, Image, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
 import LinearGradient from 'react-native-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
+import progressService from '../services/progressService';
+import mistakeService from '../services/mistakeService';
 
 const AyaDetail = ({ route }) => {
-  const { data } = route.params;
+  const { data, surahId, surahName } = route.params;
+  const navigation = useNavigation();
+  
+  const [isRecording, setIsRecording] = useState(false);
+  const [tajweedScore, setTajweedScore] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [practiceTime, setPracticeTime] = useState(0);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    // Start practice timer
+    timerRef.current = setInterval(() => {
+      setPracticeTime(prev => prev + 1);
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  const handleStartRecording = () => {
+    setIsRecording(true);
+    // Simulate AI tajweed analysis (in production, this would be actual AI)
+    setTimeout(() => {
+      const score = Math.floor(Math.random() * 40) + 60; // Random score 60-100
+      setTajweedScore(score);
+    }, 2000);
+  };
+
+  const handleStopRecording = () => {
+    setIsRecording(false);
+  };
+
+  const handleSubmit = async () => {
+    if (tajweedScore === 0) {
+      Alert.alert('Record First', 'Please record your recitation before submitting.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      // Update lesson progress
+      const progressResponse = await progressService.updateLessonProgress({
+        module: 'Quran',
+        levelId: surahId || `surah_${data.surahNumber || 1}`,
+        lessonId: `ayah_${data.number}`,
+        contentId: data._id || null,
+        status: 'completed',
+        completionPercentage: 100,
+        timeSpent: practiceTime,
+        accuracy: tajweedScore
+      });
+
+      console.log('Progress updated:', progressResponse);
+
+      // If accuracy is below threshold, log a mistake
+      if (tajweedScore < 80) {
+        await mistakeService.logMistake({
+          module: 'Quran',
+          levelId: surahId || `surah_${data.surahNumber || 1}`,
+          lessonId: `ayah_${data.number}`,
+          contentId: data._id || null,
+          mistakeType: 'recitation',
+          title: `Ayah ${data.number} Recitation`,
+          description: `Recitation accuracy was ${tajweedScore}% in ${surahName || 'Surah'}. Needs improvement in tajweed.`,
+          severity: tajweedScore < 60 ? 'major' : 'moderate'
+        });
+      }
+
+      Alert.alert(
+        tajweedScore >= 80 ? '🎉 Excellent!' : '📝 Practice Complete',
+        tajweedScore >= 80 
+          ? `Great recitation! You scored ${tajweedScore}% accuracy and earned coins!`
+          : `You scored ${tajweedScore}%. Keep practicing to improve your tajweed!`,
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
+    } catch (error) {
+      console.error('Submit error:', error);
+      Alert.alert('Error', 'Failed to save progress. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <LinearGradient
@@ -29,27 +114,33 @@ const AyaDetail = ({ route }) => {
         {/* Tajweed Feedback Section */}
         <View style={styles.feedbackContainer}>
           <Text style={styles.feedbackTitle}>AI Tajweed Feedback</Text>
+          <Text style={styles.scoreText}>{tajweedScore > 0 ? `${tajweedScore}%` : 'Start recording...'}</Text>
 
           {/* Feedback Bar */}
           <View style={styles.feedbackBar}>
-            <View style={styles.progressFill}></View>
+            <View style={[styles.progressFill, { width: `${tajweedScore}%` }]}></View>
           </View>
         </View>
 
         {/* ECG Wave */}
         <Image 
           source={require('../assests/ecg.png')} 
-          style={styles.ecg}
+          style={[styles.ecg, isRecording && styles.ecgActive]}
           resizeMode="contain"
         />
+
+        {/* Practice Time */}
+        <Text style={styles.timerText}>
+          Practice Time: {Math.floor(practiceTime / 60)}:{(practiceTime % 60).toString().padStart(2, '0')}
+        </Text>
 
         {/* Action Buttons */}
         <View style={styles.actionsContainer}>
           
           {/* Stop Button */}
-          <TouchableOpacity activeOpacity={0.8}>
+          <TouchableOpacity activeOpacity={0.8} onPress={handleStopRecording} disabled={!isRecording}>
             <LinearGradient
-              colors={['#E53935', '#D32F2F']}
+              colors={isRecording ? ['#E53935', '#D32F2F'] : ['#BDBDBD', '#9E9E9E']}
               style={styles.smallButton}
             >
               <Text style={styles.smallBtnText}>Stop</Text>
@@ -57,25 +148,34 @@ const AyaDetail = ({ route }) => {
           </TouchableOpacity>
 
           {/* Big Mic Button */}
-          <TouchableOpacity style={styles.bigMic} activeOpacity={0.8}>
+          <TouchableOpacity 
+            style={styles.bigMic} 
+            activeOpacity={0.8}
+            onPress={isRecording ? handleStopRecording : handleStartRecording}
+          >
             <LinearGradient
-              colors={['#0A7D4F', '#15B872']}
+              colors={isRecording ? ['#E53935', '#D32F2F'] : ['#0A7D4F', '#15B872']}
               style={styles.bigMicGradient}
             >
               <Image 
                 source={require('../assests/mic.png')} 
                 style={styles.bigMicIcon} 
               />
+              {isRecording && <Text style={styles.recordingText}>Recording...</Text>}
             </LinearGradient>
           </TouchableOpacity>
 
           {/* Submit Button */}
-          <TouchableOpacity activeOpacity={0.8}>
+          <TouchableOpacity activeOpacity={0.8} onPress={handleSubmit} disabled={submitting}>
             <LinearGradient
               colors={['#0A7D4F', '#15B872']}
               style={styles.smallButton}
             >
-              <Text style={styles.smallBtnText}>Submit</Text>
+              {submitting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.smallBtnText}>Submit</Text>
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -165,8 +265,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: '#0A7D4F',
-    marginBottom: 15,
+    marginBottom: 8,
     textAlign: 'center',
+  },
+
+  scoreText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#0A7D4F',
+    textAlign: 'center',
+    marginBottom: 10,
   },
 
   feedbackBar: {
@@ -179,7 +287,6 @@ const styles = StyleSheet.create({
 
   progressFill: {
     height: 14,
-    width: '45%',
     backgroundColor: '#0A7D4F',
     borderRadius: 10,
   },
@@ -187,8 +294,27 @@ const styles = StyleSheet.create({
   ecg: {
     width: '100%',
     height: 80,
-    marginBottom: 30,
+    marginBottom: 15,
     tintColor: '#0A7D4F',
+  },
+
+  ecgActive: {
+    tintColor: '#E53935',
+  },
+
+  timerText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 15,
+    fontWeight: '600',
+  },
+
+  recordingText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 5,
   },
 
   actionsContainer: {

@@ -122,30 +122,111 @@
 // });
  
 
-import React from "react";
-import { View, Text, ScrollView, StyleSheet, Dimensions, Image } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, ScrollView, StyleSheet, Dimensions, Image, ActivityIndicator, Alert } from "react-native";
 import { BarChart, LineChart, PieChart } from "react-native-chart-kit";
 import LinearGradient from 'react-native-linear-gradient';
+import progressService from '../services/progressService';
+import achievementService from '../services/achievementService';
 
 const screenWidth = Dimensions.get("window").width;
 
 export default function AnalyticsScreen() {
+  const [progressSummary, setProgressSummary] = useState(null);
+  const [coinStats, setCoinStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, []);
+
+  const fetchAnalytics = async () => {
+    try {
+      setLoading(true);
+      const [progressRes, coinsRes] = await Promise.all([
+        progressService.getProgressSummary(),
+        achievementService.getCoinStats()
+      ]);
+      
+      console.log('Progress response:', progressRes);
+      console.log('Coins response:', coinsRes);
+      
+      // Access nested data properly
+      setProgressSummary(progressRes.data?.summary || progressRes.summary || {});
+      setCoinStats(coinsRes.data || coinsRes);
+    } catch (error) {
+      console.error('Analytics fetch error:', error);
+      Alert.alert('Info', 'Using sample data. Complete lessons to see your real analytics!');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchAnalytics();
+    setRefreshing(false);
+  };
 
   const pieData = [
-    { name: "Completed", population: 70, color: "#0A7D4F", legendFontColor: "#0A7D4F", legendFontSize: 14 },
-    { name: "Remaining", population: 30, color: "#d1dedcff", legendFontColor: "#555", legendFontSize: 14 },
+    { 
+      name: "Completed", 
+      population: progressSummary?.completedPercentage || 30, 
+      color: "#0A7D4F", 
+      legendFontColor: "#0A7D4F", 
+      legendFontSize: 14 
+    },
+    { 
+      name: "Remaining", 
+      population: 100 - (progressSummary?.completedPercentage || 30), 
+      color: "#d1dedcff", 
+      legendFontColor: "#555", 
+      legendFontSize: 14 
+    },
   ];
+
+  // Get weekly progress data from API or use defaults
+  const getWeeklyProgressData = () => {
+    if (progressSummary?.weeklyProgress && Array.isArray(progressSummary.weeklyProgress)) {
+      // Map the last 7 days from API
+      const weeklyData = progressSummary.weeklyProgress.map(day => day.lessonsCompleted || 0);
+      // Ensure we have 7 values
+      while (weeklyData.length < 7) {
+        weeklyData.unshift(0);
+      }
+      return weeklyData.slice(-7).map(v => Math.max(v, 0.1)); // Ensure minimum for chart
+    }
+    return [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]; // Default when no data
+  };
+
+  // Calculate weekly accuracy trend
+  const getWeeklyAccuracyTrend = () => {
+    if (progressSummary?.weeklyProgress && Array.isArray(progressSummary.weeklyProgress)) {
+      const accuracyData = progressSummary.weeklyProgress.map(day => day.accuracy || 0);
+      // Group by weeks (assume 7-day data, group into 4 weeks)
+      const currentAccuracy = progressSummary?.accuracy || 0;
+      // Create a simple trend based on current accuracy
+      return [
+        Math.max(currentAccuracy - 20, 0),
+        Math.max(currentAccuracy - 10, 0),
+        Math.max(currentAccuracy - 5, 0),
+        currentAccuracy
+      ].map(v => Math.max(v, 1));
+    }
+    return [1, 1, 1, 1]; // Default when no data
+  };
 
   const barData = {
     labels: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-    datasets: [{ data: [3, 5, 2, 4, 6, 1, 3] }],
+    datasets: [{ data: getWeeklyProgressData() }],
   };
 
   const lineData = {
     labels: ["Week 1", "Week 2", "Week 3", "Week 4"],
     datasets: [
       {
-        data: [70, 75, 80, 90],
+        data: getWeeklyAccuracyTrend(),
         color: (opacity = 1) => `rgba(10, 125, 79, ${opacity})`,
         strokeWidth: 2,
       },
@@ -153,19 +234,49 @@ export default function AnalyticsScreen() {
     legend: ["Weekly Progress"],
   };
 
-  // Dashboard cards data
+  // Dashboard cards data - use real data from API
   const dashboardCards = [
-    { id: 1, title: "Total Coins", value: 1200, image: require("../assests/coin.png") },
-    { id: 2, title: "Your Level", value: "Intermediate", image: require("../assests/volume.png") },
-    { id: 3, title: "Accuracy", value: "85%", image: require("../assests/accuracy.png") },
+    { 
+      id: 1, 
+      title: "Total Coins", 
+      value: coinStats?.currentBalance || 0, 
+      image: require("../assests/coin.png") 
+    },
+    { 
+      id: 2, 
+      title: "Your Level", 
+      value: progressSummary?.currentLevel || "Beginner", 
+      image: require("../assests/volume.png") 
+    },
+    { 
+      id: 3, 
+      title: "Accuracy", 
+      value: progressSummary?.accuracy ? `${Math.round(progressSummary.accuracy)}%` : "0%", 
+      image: require("../assests/accuracy.png") 
+    },
   ];
+
+  if (loading) {
+    return (
+      <LinearGradient colors={['#F4FFF5', '#E8F5E9']} style={{flex: 1}}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0A7D4F" />
+          <Text style={styles.loadingText}>Loading analytics...</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient
       colors={['#F4FFF5', '#E8F5E9']}
       style={{flex: 1}}
     >
-      <ScrollView style={styles.container}>
+      <ScrollView 
+        style={styles.container}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
         <Text style={styles.title}>Your Analytics</Text>
         <Text style={styles.subtitle}>Track Your Learning Progress</Text>
 
@@ -236,6 +347,17 @@ const chartConfig = {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20 },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#0A7D4F',
+    fontWeight: '600',
+  },
   title: { fontSize: 30, fontWeight: "900", color: "#0A7D4F", textAlign: "center", marginTop: 10, letterSpacing: 0.5 },
   subtitle: { fontSize: 14, color: "#666", textAlign: "center", marginBottom: 20, fontWeight: '600' },
 

@@ -66,7 +66,7 @@ const QuidaTaqkti = ({ navigation, route }) => {
       colors={['#F4FFF5', '#E8F5E9']}
       style={{flex: 1}}
     >
-      <ScrollView style={styles.container}>
+      <View style={styles.container}>
         <Text style={styles.heading}>{data?.arabicName} ({data?.name})</Text>
 
       <FlatList
@@ -76,7 +76,7 @@ const QuidaTaqkti = ({ navigation, route }) => {
         numColumns={1}
         contentContainerStyle={{ paddingBottom: 20 }}
       />
-      </ScrollView>
+      </View>
     </LinearGradient>
   );
 };

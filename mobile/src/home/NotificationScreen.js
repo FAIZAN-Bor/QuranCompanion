@@ -1,11 +1,38 @@
-import { View, FlatList, StyleSheet, Text } from 'react-native';
-import React from 'react';
+import { View, FlatList, StyleSheet, Text, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect } from 'react';
 import NotificationItem from '../component/Notificatioitem';
 import LinearGradient from 'react-native-linear-gradient';
+import notificationService from '../services/notificationService';
 
 const NotificationScreen = () => {
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-const notifications = [
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  const fetchNotifications = async () => {
+    try {
+      setLoading(true);
+      const response = await notificationService.getNotifications(1, 20);
+      setNotifications(response.data.notifications || getMockNotifications());
+    } catch (error) {
+      console.error('Notifications fetch error:', error);
+      setNotifications(getMockNotifications());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchNotifications();
+    setRefreshing(false);
+  };
+
+  const getMockNotifications = () => [
   {
     id: '1',
     icon: require('../assests/bell.png'),
@@ -76,7 +103,18 @@ const notifications = [
     message: 'You recited 34 verses this week. Excellent progress!',
     time: '3 days ago',
   },
-];
+  ];
+
+  if (loading) {
+    return (
+      <LinearGradient colors={['#F4FFF5', '#E8F5E9']} style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0A7D4F" />
+          <Text style={styles.loadingText}>Loading notifications...</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
 
 
   return (
@@ -91,14 +129,18 @@ const notifications = [
 
       <FlatList
         data={notifications}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.id || item._id}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         renderItem={({ item }) => (
-          <NotificationItem
-            icon={item.icon}
-            title={item.title}
-            message={item.message}
-            time={item.time}
-          />
+          <View key={item.id || item._id}>
+            <NotificationItem
+              icon={item.icon}
+              title={item.title}
+              message={item.message}
+              time={item.time}
+            />
+          </View>
         )}
       />
     </LinearGradient>
@@ -111,6 +153,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#0A7D4F',
+    fontWeight: '600',
   },
   headerContainer: {
     marginBottom: 15,

@@ -1,17 +1,23 @@
-import { StyleSheet, Text, View, Image, TouchableOpacity, FlatList, ScrollView, Dimensions, Animated } from 'react-native';
-import React, { useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, Image, TouchableOpacity, FlatList, ScrollView, Dimensions, Animated, ActivityIndicator, Alert } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LineChart, PieChart } from 'react-native-chart-kit';
 import LinearGradient from 'react-native-linear-gradient';
-
-// Import your data
-import { duaData } from '../assests/data/duaData';
-import { QuranData } from '../assests/data/QuranData';
-import { QuidaData } from '../assests/data/QuidaData';
+import { useAuth } from '../context/AuthContext';
+import userService from '../services/userService';
+import progressService from '../services/progressService';
+import achievementService from '../services/achievementService';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 const Home = ({ navigation }) => {
+  const { user } = useAuth();
+  
+  // State for dashboard data
+  const [dashboardData, setDashboardData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
@@ -22,11 +28,93 @@ const Home = ({ navigation }) => {
   const [animatedLineData, setAnimatedLineData] = React.useState([0, 0, 0, 0, 0]);
   const [animatedPieData, setAnimatedPieData] = React.useState([0, 0, 0, 0]);
 
-  // Final values
-  const finalLineData = [40, 60, 75, 50, 90];
-  const finalPieData = [40, 30, 20, 10];
+  // Final values - will be updated from API (use refs to avoid stale closure in animation listener)
+  const [finalLineData, setFinalLineData] = React.useState([1, 1, 1, 1, 1]);
+  const [finalPieData, setFinalPieData] = React.useState([1, 1, 1, 1]);
+  const finalLineDataRef = useRef([1, 1, 1, 1, 1]);
+  const finalPieDataRef = useRef([1, 1, 1, 1]);
 
   useEffect(() => {
+    fetchDashboard();
+  }, []);
+
+  const fetchDashboard = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch all data in parallel
+      const [dashboardRes, progressRes, coinsRes] = await Promise.all([
+        userService.getDashboard(),
+        progressService.getProgressSummary(),
+        achievementService.getCoinStats()
+      ]);
+      
+      console.log('Dashboard response:', dashboardRes);
+      console.log('Progress response:', progressRes);
+      console.log('Coins response:', coinsRes);
+      
+      // Set dashboard data
+      setDashboardData({
+        ...dashboardRes.data,
+        progress: progressRes.data?.summary || progressRes.summary || {},
+        coins: coinsRes.data || coinsRes
+      });
+      
+      // Update chart data if available from progress
+      const progressData = progressRes.data?.summary || progressRes.summary || {};
+      
+      // Map weeklyProgress from API format [{date, lessonsCompleted, accuracy}] to array of numbers
+      if (progressData.weeklyProgress && Array.isArray(progressData.weeklyProgress)) {
+        // Take last 5 days or pad with zeros if less
+        const weeklyData = progressData.weeklyProgress.map(day => day.lessonsCompleted || 0);
+        // Ensure we have at least 5 values, take last 5 if more
+        const last5Days = weeklyData.slice(-5);
+        while (last5Days.length < 5) {
+          last5Days.unshift(0); // Pad with zeros at the beginning
+        }
+        // Ensure no zero values for chart display (use 1 as minimum)
+        const chartData = last5Days.map(val => Math.max(val, 1));
+        setFinalLineData(chartData);
+        finalLineDataRef.current = chartData; // Update ref for animation
+        console.log('Weekly progress chart data:', chartData);
+      }
+      
+      // Update pie chart data - map from {Quran: {completed, total}} to array of completed counts
+      if (progressData.lessonsByType) {
+        const typeData = progressData.lessonsByType;
+        const pieValues = [
+          typeData.Quran?.completed || typeData.Quran || 0,
+          typeData.Dua?.completed || typeData.Dua || 0,
+          typeData.Qaida?.completed || typeData.Qaida || 0,
+          0 // Quiz - not tracked separately in lessonsByType
+        ];
+        // Ensure at least some values for pie chart display
+        const hasSomeData = pieValues.some(v => v > 0);
+        const finalPieValues = hasSomeData ? pieValues.map(v => Math.max(v, 1)) : [1, 1, 1, 1];
+        setFinalPieData(finalPieValues);
+        finalPieDataRef.current = finalPieValues; // Update ref for animation
+        console.log('Pie chart data:', pieValues);
+      }
+      
+      // Animate charts
+      animateCharts();
+    } catch (error) {
+      console.error('Dashboard fetch error:', error);
+      Alert.alert('Info', 'Using sample data. Complete lessons to see your real analytics!');
+      // Still animate with default values
+      animateCharts();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchDashboard();
+    setRefreshing(false);
+  };
+
+  const animateCharts = () => {
     // Animate charts on mount
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -52,16 +140,16 @@ const Home = ({ navigation }) => {
       }),
     ]).start();
 
-    // Listen to animation value changes
+    // Listen to animation value changes - use refs to get current values
     const lineDataListener = chartDataAnim.addListener(({ value }) => {
-      setAnimatedLineData(finalLineData.map(val => Math.round(val * value)));
-      setAnimatedPieData(finalPieData.map(val => Math.round(val * value)));
+      setAnimatedLineData(finalLineDataRef.current.map(val => Math.round(val * value)));
+      setAnimatedPieData(finalPieDataRef.current.map(val => Math.round(val * value)));
     });
 
     return () => {
       chartDataAnim.removeListener(lineDataListener);
     };
-  }, []);
+  };
 
   const lineChartData = {
     labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
@@ -86,16 +174,41 @@ const Home = ({ navigation }) => {
     propsForDots: { r: '4', strokeWidth: '2', stroke: '#0A7D4F' },
   };
 
-  // Analytics dashboard cards data
+  // Analytics dashboard cards data - use real data from API
   const dashboardCards = [
-    { id: 1, title: 'Total Coins', value: 1200, image: require('../assests/coin.png') },
-    { id: 2, title: 'Your Level', value: 'Intermediate', image: require('../assests/volume.png') },
-    { id: 3, title: 'Accuracy', value: '85%', image: require('../assests/accuracy.png') },
+    { 
+      id: 1, 
+      title: 'Total Coins', 
+      value: dashboardData?.coins?.currentBalance || 0, 
+      image: require('../assests/coin.png') 
+    },
+    { 
+      id: 2, 
+      title: 'Your Level', 
+      value: dashboardData?.progress?.currentLevel || user?.currentLevel || 'Beginner', 
+      image: require('../assests/volume.png') 
+    },
+    { 
+      id: 3, 
+      title: 'Accuracy', 
+      value: dashboardData?.progress?.accuracy ? `${Math.round(dashboardData.progress.accuracy)}%` : '0%', 
+      image: require('../assests/accuracy.png') 
+    },
   ];
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+      {loading && !dashboardData ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0A7D4F" />
+          <Text style={styles.loadingText}>Loading dashboard...</Text>
+        </View>
+      ) : (
+        <ScrollView 
+          contentContainerStyle={{ paddingBottom: 40 }}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+        >
         {/* Profile Section */}
         <LinearGradient
           colors={['#0A7D4F', '#0F9D63', '#15B872']}
@@ -103,18 +216,22 @@ const Home = ({ navigation }) => {
           start={{x: 0, y: 0}}
           end={{x: 1, y: 1}}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+          <TouchableOpacity 
+            style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+            onPress={() => navigation.navigate('EditProfile')}
+            activeOpacity={0.7}
+          >
             <View style={styles.profileImageContainer}>
-              <Image source={require('../assests/profile.jpeg')} style={styles.profileImage} />
+              <Image source={user?.profileImage ? { uri: user.profileImage } : require('../assests/profile.jpeg')} style={styles.profileImage} />
             </View>
             <View style={styles.profileText}>
-              <Text style={styles.profileName}>Farhan Akhtar</Text>
+              <Text style={styles.profileName}>{user?.name || 'User'}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Image source={require('../assests/email.png')} style={styles.emailIcon} />
-                <Text style={styles.profileEmail}>farhanakhtar04@gmail.com</Text>
+                <Text style={styles.profileEmail}>{user?.email || 'user@example.com'}</Text>
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
 
           <TouchableOpacity style={styles.notificationBtn} onPress={() => navigation.navigate('NotificationScreen')}>
             <Image source={require('../assests/bell1.png')} style={styles.rightIcon} />
@@ -217,7 +334,7 @@ const Home = ({ navigation }) => {
           <TouchableOpacity
             style={styles.duaBanner}
             activeOpacity={0.85}
-            onPress={() => navigation.navigate('DuaLearn', { data: duaData })}
+            onPress={() => navigation.navigate('DuaLearn')}
           >
             <LinearGradient
               colors={['#FFFFFF', '#F0FDF4']}
@@ -232,7 +349,7 @@ const Home = ({ navigation }) => {
                 <Text style={styles.duaTitle}>Learn Essential Duas</Text>
                 <Text style={styles.duaSubtitle}>Master daily prayers and supplications</Text>
                 <View style={styles.duaBadge}>
-                  <Text style={styles.duaBadgeText}>📖 {duaData.length} Duas Available</Text>
+                  <Text style={styles.duaBadgeText}>📖 Islamic Duas</Text>
                 </View>
               </View>
               <View style={styles.duaArrow}>
@@ -242,6 +359,7 @@ const Home = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 };
@@ -250,6 +368,18 @@ export default Home;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F4FFF5' },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F4FFF5',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#0A7D4F',
+    fontWeight: '600',
+  },
   welcomeBanner: {
     paddingVertical: 18,
     paddingHorizontal: 20,

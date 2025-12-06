@@ -1,6 +1,6 @@
 // SignUp.js
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,16 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Image
+  Image,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { Dropdown } from 'react-native-element-dropdown';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
 import LinearGradient from 'react-native-linear-gradient';
+import { useAuth } from '../context/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Validation Schema
 const SignupSchema = Yup.object().shape({
@@ -37,10 +41,33 @@ const SignupSchema = Yup.object().shape({
 });
 
 const SignUp = ({ navigation }) => {
+  const { signup } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+
   const roleData = [
     { label: 'Child', value: 'child' },
     { label: 'Parent', value: 'parent' },
   ];
+
+  const handleSignup = async (values) => {
+    try {
+      setIsLoading(true);
+      const { confirmPass, ...signupData } = values; // Remove confirmPass from API call
+      
+      const response = await signup(signupData);
+      
+      // Store email and role for OTP verification
+      await AsyncStorage.setItem('pendingEmail', values.email);
+      await AsyncStorage.setItem('pendingRole', values.role);
+      
+      Alert.alert('Success', response.message || 'OTP sent to your email!');
+      navigation.navigate('Otp', { email: values.email, role: values.role });
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Failed to create account');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <Formik
@@ -52,10 +79,7 @@ const SignUp = ({ navigation }) => {
         role: '',
       }}
       validationSchema={SignupSchema}
-      onSubmit={(values) => {
-        console.log('Form Data:', values);
-        navigation.navigate('Otp'); // Navigate after successful validation
-      }}
+      onSubmit={handleSignup}
     >
       {({
         handleChange,
@@ -152,14 +176,22 @@ const SignUp = ({ navigation }) => {
               )}
 
               {/* Submit Button */}
-              <TouchableOpacity onPress={handleSubmit} activeOpacity={0.8}>
+              <TouchableOpacity 
+                onPress={handleSubmit} 
+                activeOpacity={0.8}
+                disabled={isLoading}
+              >
                 <LinearGradient
                   colors={['#0A7D4F', '#0F9D63', '#15B872']}
                   style={styles.button}
                   start={{x: 0, y: 0}}
                   end={{x: 1, y: 0}}
                 >
-                  <Text style={styles.buttonText}>Create Account</Text>
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.buttonText}>Create Account</Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
 

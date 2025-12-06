@@ -11,6 +11,7 @@ import ForgetPassword from './auth/forgetPassword';
 import LearnerSurvey from './auth/LearnerSurvey';
 
 import DuaLearn from './home/DuaLearn';  
+import DuaDetail from './home/DuaDetail';
 import Quran from './home/Quran'
 import AllAya from './home/AllAya'
 import AyaDetail from './home/AyaDetail';
@@ -26,6 +27,7 @@ import BottomTabNavigator from './navigation/BottomTabNavigator';
 import ChangPasswordScreen from './Setting/ChangePasswordScreen';
 import EditProfile from './Setting/EditProfile';
 import ParentNavigator from './parent/ParentNavigator';
+import MistakePractice from './DrawerScreen/MistakePractice';
 
 
 const Stack = createNativeStackNavigator();
@@ -43,6 +45,7 @@ const navigation = () => {
             <Stack.Screen name="LearnerSurvey" component={LearnerSurvey} />
             <Stack.Screen name="ForgetPassword" component={ForgetPassword} /> 
                 <Stack.Screen name="DuaLearn" component={DuaLearn}  options={{title:'Dua Screen',headerShown: true ,headerTintColor:'#2b624c'}}/> 
+                <Stack.Screen name="DuaDetail" component={DuaDetail}  options={{title:'Dua Detail',headerShown: true ,headerTintColor:'#2b624c'}}/> 
                 <Stack.Screen name="Quran" component={Quran}options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}} /> 
                 <Stack.Screen name="BottomTabNavigator" component={BottomTabNavigator} />
                 <Stack.Screen name="AllAya" component={AllAya} options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}}/>
@@ -58,6 +61,9 @@ const navigation = () => {
       <Stack.Screen name="ProgressMap" component={ProgressMap} />
       <Stack.Screen name="LevelDetail" component={LevelDetail} />
       <Stack.Screen name="QuizScreen" component={QuizScreen} />
+      
+      {/* Mistake Practice Screen */}
+      <Stack.Screen name="MistakePractice" component={MistakePractice} options={{title:'Practice Mistake',headerShown: true ,headerTintColor:'#2b624c'}}/>
       
       {/* Parent Screens */}
       <Stack.Screen name="ParentNavigator" component={ParentNavigator} />

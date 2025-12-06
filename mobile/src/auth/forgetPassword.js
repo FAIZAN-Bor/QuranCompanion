@@ -1,10 +1,11 @@
 // ForgetPassword.js
 
-import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, ActivityIndicator } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
 import LinearGradient from 'react-native-linear-gradient';
+import authService from '../services/authService';
 
 // Validation Schema
 const ForgetPasswordSchema = Yup.object().shape({
@@ -14,6 +15,35 @@ const ForgetPasswordSchema = Yup.object().shape({
 });
 
 const ForgetPassword = ({ navigation }) => {
+  const [loading, setLoading] = useState(false);
+
+  const handleForgotPassword = async (values) => {
+    setLoading(true);
+    try {
+      const response = await authService.forgotPassword(values.email);
+      
+      if (response.success) {
+        Alert.alert(
+          'Success',
+          'Password reset link has been sent to your email. Please check your inbox.',
+          [
+            { 
+              text: 'OK', 
+              onPress: () => navigation.navigate('Login') 
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        error.message || 'Failed to send reset link. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <LinearGradient
       colors={['#E8F5E9', '#F1F8E9', '#FFF9C4']}
@@ -27,14 +57,7 @@ const ForgetPassword = ({ navigation }) => {
         <Formik
           initialValues={{ email: '' }}
           validationSchema={ForgetPasswordSchema}
-          onSubmit={(values) => {
-            console.log('Reset Password Email:', values.email);
-            Alert.alert(
-              'Password Reset',
-              `A password reset link has been sent to ${values.email}`,
-              [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
-            );
-          }}
+          onSubmit={handleForgotPassword}
         >
           {({ handleChange, handleBlur, handleSubmit, values, errors, touched }) => (
             <>
@@ -47,19 +70,28 @@ const ForgetPassword = ({ navigation }) => {
                 onBlur={handleBlur('email')}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                editable={!loading}
               />
               {errors.email && touched.email && (
                 <Text style={styles.error}>{errors.email}</Text>
               )}
 
-              <TouchableOpacity onPress={handleSubmit} activeOpacity={0.8}>
+              <TouchableOpacity 
+                onPress={handleSubmit} 
+                activeOpacity={0.8}
+                disabled={loading}
+              >
                 <LinearGradient
                   colors={['#0A7D4F', '#0F9D63', '#15B872']}
                   style={styles.button}
                   start={{x: 0, y: 0}}
                   end={{x: 1, y: 0}}
                 >
-                  <Text style={styles.buttonText}>Send Reset Link</Text>
+                  {loading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.buttonText}>Send Reset Link</Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
 

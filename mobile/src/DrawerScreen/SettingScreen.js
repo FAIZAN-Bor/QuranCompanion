@@ -1,23 +1,56 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image, TextInput, ActivityIndicator } from "react-native";
 import React, { useState } from "react";
 import CustomModal from "../Setting/CustomModal";
 import LinearGradient from 'react-native-linear-gradient';
+import { useAuth } from '../context/AuthContext';
+import parentService from '../services/parentService';
 
 export default function SettingScreen({ navigation }) {
+  const { user } = useAuth();
   const [modalVisible, setModalVisible] = useState(false);
-  const [modalType, setModalType] = useState(""); // "logout" or "delete"
+  const [modalType, setModalType] = useState(""); // "logout" or "delete" or "linkParent"
+  const [linkCode, setLinkCode] = useState("");
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkError, setLinkError] = useState("");
 
   const openModal = (type) => {
     setModalType(type);
     setModalVisible(true);
+    if (type === "linkParent") {
+      setLinkCode("");
+      setLinkError("");
+    }
   };
 
   const handleConfirm = () => {
+    if (modalType === "linkParent") {
+      handleLinkToParent();
+      return;
+    }
     setModalVisible(false);
     if (modalType === "logout") {
       navigation.replace("Login");
     } else if (modalType === "delete") {
       navigation.replace("SignUp");
+    }
+  };
+
+  const handleLinkToParent = async () => {
+    if (!linkCode || linkCode.length !== 6) {
+      setLinkError("Please enter a valid 6-character code");
+      return;
+    }
+
+    try {
+      setLinkLoading(true);
+      setLinkError("");
+      const response = await parentService.linkToParent(linkCode);
+      setModalVisible(false);
+      alert("Success! You have been linked to your parent's account.");
+    } catch (error) {
+      setLinkError(error.message || "Invalid or expired link code");
+    } finally {
+      setLinkLoading(false);
     }
   };
 
@@ -29,6 +62,9 @@ export default function SettingScreen({ navigation }) {
       case "changePassword":
         navigation.navigate("ChangePasswordScreen");
         break;
+      case "linkParent":
+        openModal("linkParent");
+        break;
       case "logout":
         openModal("logout");
         break;
@@ -37,6 +73,9 @@ export default function SettingScreen({ navigation }) {
         break;
     }
   };
+
+  // Check if user is a child (learner) - only show link parent option for children
+  const isLearner = user?.role === 'child' || !user?.role || user?.role !== 'parent';
 
   return (
     <LinearGradient
@@ -49,12 +88,12 @@ export default function SettingScreen({ navigation }) {
         <View style={styles.imageWrapper}>
           <Image
             style={styles.profileImage}
-            source={require("../assests/profile.jpeg")}
+            source={user?.profileImage ? { uri: user.profileImage } : require("../assests/profile.jpeg")}
           />
         </View>
         <View style={styles.textWrapper}>
-          <Text style={styles.name}>Farhan Akhtar</Text>
-          <Text style={styles.email}>m.farhanAkhtar04@gmail.com</Text>
+          <Text style={styles.name}>{user?.name || 'User'}</Text>
+          <Text style={styles.email}>{user?.email || 'user@example.com'}</Text>
         </View>
       </View>
 
@@ -72,6 +111,16 @@ export default function SettingScreen({ navigation }) {
         </LinearGradient>
       </TouchableOpacity>
 
+      {/* Link to Parent - Only show for learners */}
+      {isLearner && (
+        <TouchableOpacity onPress={() => handleOptionPress("linkParent")} activeOpacity={0.8}>
+          <LinearGradient colors={['#FFFFFF', '#E3F2FD']} style={styles.option}>
+            <Text style={[styles.icon, { fontSize: 24, marginRight: 15 }]}>👨‍👧</Text>
+            <Text style={styles.optionText}>Link to Parent</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity onPress={() => handleOptionPress("logout")} activeOpacity={0.8}>
         <LinearGradient colors={['#FFFFFF', '#E8F5E9']} style={styles.option}>
           <Image source={require("../assests/logout.png")} style={styles.icon} />
@@ -86,17 +135,67 @@ export default function SettingScreen({ navigation }) {
         </LinearGradient>
       </TouchableOpacity>
 
-      {/* Custom Modal */}
-      <CustomModal
-        visible={modalVisible}
-        title={modalType === "logout" ? "Logout" : "Delete Account"}
-        message={modalType === "logout" 
-                  ? "Are you sure you want to logout?" 
-                  : "This action cannot be undone. Continue?"}
-        onCancel={() => setModalVisible(false)}
-        onConfirm={handleConfirm}
-        confirmText={modalType === "logout" ? "Yes, Logout" : "Delete"}
-      />
+      {/* Custom Modal for Logout/Delete */}
+      {(modalType === "logout" || modalType === "delete") && (
+        <CustomModal
+          visible={modalVisible}
+          title={modalType === "logout" ? "Logout" : "Delete Account"}
+          message={modalType === "logout" 
+                    ? "Are you sure you want to logout?" 
+                    : "This action cannot be undone. Continue?"}
+          onCancel={() => setModalVisible(false)}
+          onConfirm={handleConfirm}
+          confirmText={modalType === "logout" ? "Yes, Logout" : "Delete"}
+        />
+      )}
+
+      {/* Link to Parent Modal */}
+      {modalType === "linkParent" && modalVisible && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.linkModal}>
+            <Text style={styles.linkModalTitle}>Link to Parent</Text>
+            <Text style={styles.linkModalSubtitle}>
+              Enter the 6-character code your parent shared with you
+            </Text>
+            
+            <TextInput
+              style={styles.linkCodeInput}
+              placeholder="ABC123"
+              placeholderTextColor="#999"
+              value={linkCode}
+              onChangeText={setLinkCode}
+              maxLength={6}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
+            
+            {linkError ? (
+              <Text style={styles.linkError}>{linkError}</Text>
+            ) : null}
+            
+            <View style={styles.linkModalButtons}>
+              <TouchableOpacity 
+                style={styles.linkCancelBtn} 
+                onPress={() => setModalVisible(false)}
+              >
+                <Text style={styles.linkCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.linkConfirmBtn} 
+                onPress={handleLinkToParent}
+                disabled={linkLoading}
+              >
+                {linkLoading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.linkConfirmText}>Link</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </LinearGradient>
   );
 }
@@ -139,5 +238,88 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
   optionText: { fontSize: 17, fontWeight: "800", color: "#0A7D4F", flex: 1 },
-  icon: { width: 24, height: 24, marginRight: 15, tintColor: '#0A7D4F' }
+  icon: { width: 24, height: 24, marginRight: 15, tintColor: '#0A7D4F' },
+  // Link to Parent Modal Styles
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  linkModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 25,
+    width: '85%',
+    alignItems: 'center',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+  },
+  linkModalTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#0A7D4F',
+    marginBottom: 10,
+  },
+  linkModalSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  linkCodeInput: {
+    borderWidth: 2,
+    borderColor: '#0A7D4F',
+    borderRadius: 12,
+    padding: 15,
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: 8,
+    textAlign: 'center',
+    width: '80%',
+    marginBottom: 10,
+    color: '#0A7D4F',
+  },
+  linkError: {
+    color: '#E53935',
+    fontSize: 12,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  linkModalButtons: {
+    flexDirection: 'row',
+    marginTop: 15,
+    gap: 15,
+  },
+  linkCancelBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 25,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#0A7D4F',
+  },
+  linkCancelText: {
+    color: '#0A7D4F',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  linkConfirmBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 10,
+    backgroundColor: '#0A7D4F',
+  },
+  linkConfirmText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 16,
+  },
 });

@@ -9,10 +9,12 @@ import {
   ScrollView,
   TextInput,
   Alert,
-  Animated
+  Animated,
+  ActivityIndicator
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { surveyQuestions, calculateProficiencyLevel, getSections } from '../assests/data/surveyData';
+import userService from '../services/userService';
 
 const LearnerSurvey = ({ navigation }) => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -21,6 +23,7 @@ const LearnerSurvey = ({ navigation }) => {
   const [progress] = useState(new Animated.Value(0));
   const [errorMessage, setErrorMessage] = useState('');
   const [result, setResult] = useState(null); // { level, description }
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentQuestion = surveyQuestions[currentQuestionIndex];
   const totalQuestions = surveyQuestions.length;
@@ -90,9 +93,41 @@ const LearnerSurvey = ({ navigation }) => {
     }
   };
 
-  const handleSubmit = () => {
-    const proficiency = calculateProficiencyLevel(answers);
-    setResult(proficiency);
+  const handleSubmit = async () => {
+    try {
+      setIsSubmitting(true);
+      const proficiency = calculateProficiencyLevel(answers);
+      
+      // Prepare survey data for backend
+      const surveyData = {
+        answers: Object.fromEntries(Object.entries(answers)),
+        proficiencyLevel: proficiency.level,
+        // Calculate section scores based on questions
+        sectionScores: {
+          readingAbility: 0,
+          pronunciationAbility: 0,
+          wordSentenceReading: 0,
+          previousExperience: 0,
+          comprehension: 0
+        },
+        totalScore: Object.keys(answers).length
+      };
+
+      // Submit to backend
+      const response = await userService.submitSurvey(surveyData);
+      
+      setResult(proficiency);
+      
+      // After showing result, navigate to Progress Map
+      setTimeout(() => {
+        navigation.replace('BottomTabNavigator', { 
+          initialRouteName: 'Progress Map'
+        });
+      }, 3000);
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Failed to submit survey');
+      setIsSubmitting(false);
+    }
   };
 
   const renderOption = (option) => {

@@ -1,42 +1,190 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, Dimensions, ActivityIndicator } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { LineChart, PieChart } from 'react-native-chart-kit';
+import parentService from '../services/parentService';
 
 const screenWidth = Dimensions.get('window').width;
 
 const ChildProgressOverview = ({ route }) => {
-  const { child } = route.params || { child: { name: 'Child' } };
+  const childFromParams = route?.params?.child;
+  const [loading, setLoading] = useState(true);
+  const [progressData, setProgressData] = useState(null);
+  const [mistakeData, setMistakeData] = useState([]);
+  const [quizCount, setQuizCount] = useState(0);
+  const [children, setChildren] = useState([]);
+  const [selectedChild, setSelectedChild] = useState(childFromParams || null);
 
-  // Mock data for charts
-  const accuracyData = {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    datasets: [{
-      data: [65, 70, 75, 72, 80, 83, 85],
-      color: (opacity = 1) => `rgba(10, 125, 79, ${opacity})`,
-      strokeWidth: 3,
-    }],
+  useEffect(() => {
+    if (!childFromParams) {
+      fetchChildren();
+    } else {
+      setSelectedChild(childFromParams);
+    }
+  }, [childFromParams]);
+
+  useEffect(() => {
+    if (selectedChild?._id) {
+      fetchAllData();
+    }
+  }, [selectedChild]);
+
+  const fetchChildren = async () => {
+    try {
+      const response = await parentService.getChildren();
+      // response is { success, data: { children: [{ child: {...} }, ...] } }
+      if (response.success && response.data?.children?.length > 0) {
+        const childrenList = response.data.children.map(link => ({
+          _id: link.child._id,
+          name: link.child.name,
+          email: link.child.email,
+          ...link.child
+        }));
+        setChildren(childrenList);
+        setSelectedChild(childrenList[0]);
+      } else {
+        setLoading(false);
+      }
+    } catch (err) {
+      console.error('Error fetching children:', err);
+      setLoading(false);
+    }
   };
 
-  const mistakeDistribution = [
-    { name: 'Ikhfa', population: 25, color: '#E53935', legendFontColor: '#666', legendFontSize: 13 },
-    { name: 'Idgham', population: 15, color: '#1976D2', legendFontColor: '#666', legendFontSize: 13 },
-    { name: 'Qalqalah', population: 30, color: '#F57C00', legendFontColor: '#666', legendFontSize: 13 },
-    { name: 'Madd', population: 20, color: '#7B1FA2', legendFontColor: '#666', legendFontSize: 13 },
-    { name: 'Ghunna', population: 10, color: '#0097A7', legendFontColor: '#666', legendFontSize: 13 },
-  ];
+  const fetchAllData = async () => {
+    if (!selectedChild?._id) return;
+    try {
+      setLoading(true);
+      const [progressRes, mistakesRes, quizzesRes] = await Promise.all([
+        parentService.getChildProgress(selectedChild._id),
+        parentService.getChildMistakes(selectedChild._id),
+        parentService.getChildQuizzes(selectedChild._id),
+      ]);
 
-  const lessonProgress = [
-    { name: 'Qaida Lessons', progress: 80, color: '#0A7D4F' },
-    { name: 'Quran Lessons', progress: 65, color: '#1976D2' },
-    { name: 'Duas Learned', progress: 90, color: '#7B1FA2' },
-  ];
+      // progressRes.data is { progress, summary }
+      setProgressData(progressRes.data?.summary || null);
+      // quizzesRes.data is { quizzes }
+      setQuizCount(quizzesRes.data?.quizzes?.length || 0);
+
+      // mistakesRes.data is { mistakes }
+      const mistakes = mistakesRes.data?.mistakes || [];
+      if (mistakes.length > 0) {
+        const mistakesByType = mistakes.reduce((acc, m) => {
+          const type = m.mistakeType || 'Other';
+          acc[type] = (acc[type] || 0) + 1;
+          return acc;
+        }, {});
+
+        const colors = ['#E53935', '#1976D2', '#F57C00', '#7B1FA2', '#0097A7', '#4CAF50'];
+        const pieData = Object.entries(mistakesByType).map(([name, count], index) => ({
+          name,
+          population: count,
+          color: colors[index % colors.length],
+          legendFontColor: '#666',
+          legendFontSize: 13,
+        }));
+        setMistakeData(pieData);
+      }
+    } catch (err) {
+      console.error('Error fetching progress data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatLastActive = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffHours = Math.floor((now - date) / (1000 * 60 * 60));
+    
+    if (diffHours < 1) return 'Just now';
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    return `${Math.floor(diffHours / 24)} days ago`;
+  };
+
+  // Build accuracy data from weeklyProgress
+  const buildAccuracyData = () => {
+    const defaultData = {
+      labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+      datasets: [{
+        data: [0, 0, 0, 0, 0, 0, 0],
+        color: (opacity = 1) => `rgba(10, 125, 79, ${opacity})`,
+        strokeWidth: 3,
+      }],
+    };
+
+    if (!progressData?.weeklyProgress) return defaultData;
+
+    const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dataPoints = progressData.weeklyProgress.map(wp => wp.accuracy || 0);
+    const labels = progressData.weeklyProgress.map(wp => {
+      const date = new Date(wp.date);
+      return dayLabels[date.getDay()];
+    });
+
+    return {
+      labels: labels.length > 0 ? labels : defaultData.labels,
+      datasets: [{
+        data: dataPoints.length > 0 ? dataPoints : defaultData.datasets[0].data,
+        color: (opacity = 1) => `rgba(10, 125, 79, ${opacity})`,
+        strokeWidth: 3,
+      }],
+    };
+  };
+
+  // Build lesson progress from lessonsByType
+  const buildLessonProgress = () => {
+    const defaultProgress = [
+      { name: 'Qaida Lessons', progress: 0, color: '#0A7D4F' },
+      { name: 'Quran Lessons', progress: 0, color: '#1976D2' },
+      { name: 'Duas Learned', progress: 0, color: '#7B1FA2' },
+    ];
+
+    if (!progressData?.lessonsByType) return defaultProgress;
+
+    const { Qaida = {}, Quran = {}, Dua = {} } = progressData.lessonsByType;
+    return [
+      { name: 'Qaida Lessons', progress: Qaida.completed || 0, total: Qaida.total || 30, color: '#0A7D4F' },
+      { name: 'Quran Lessons', progress: Quran.completed || 0, total: Quran.total || 114, color: '#1976D2' },
+      { name: 'Duas Learned', progress: Dua.completed || 0, total: Dua.total || 50, color: '#7B1FA2' },
+    ];
+  };
+
+  if (loading) {
+    return (
+      <LinearGradient colors={['#F4FFF5', '#E8F5E9']} style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0A7D4F" />
+          <Text style={styles.loadingText}>Loading progress...</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
+
+  if (!selectedChild) {
+    return (
+      <LinearGradient colors={['#F4FFF5', '#E8F5E9']} style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.emptyIcon}>👶</Text>
+          <Text style={styles.emptyText}>No child linked yet</Text>
+        </View>
+      </LinearGradient>
+    );
+  }
+
+  const accuracyData = buildAccuracyData();
+  const lessonProgress = buildLessonProgress();
+  
+  const topMistake = mistakeData.length > 0 
+    ? mistakeData.reduce((a, b) => a.population > b.population ? a : b).name 
+    : 'None';
 
   const summaryCards = [
-    { label: 'Top Mistake', value: 'Qalqalah', color: '#E53935' },
-    { label: 'Overall Accuracy', value: '83%', color: '#0A7D4F' },
-    { label: 'Last Active', value: '3 hours ago', color: '#1976D2' },
-    { label: 'Quizzes Attempted', value: '12', color: '#7B1FA2' },
+    { label: 'Top Mistake', value: topMistake, color: '#E53935' },
+    { label: 'Overall Accuracy', value: `${progressData?.accuracy || 0}%`, color: '#0A7D4F' },
+    { label: 'Last Active', value: formatLastActive(progressData?.lastActivity), color: '#1976D2' },
+    { label: 'Quizzes Attempted', value: `${quizCount}`, color: '#7B1FA2' },
   ];
 
   return (
@@ -48,7 +196,7 @@ const ChildProgressOverview = ({ route }) => {
         
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>{child.name}'s Progress</Text>
+          <Text style={styles.title}>{selectedChild.name}'s Progress</Text>
           <Text style={styles.subtitle}>Detailed Performance Overview</Text>
         </View>
 
@@ -103,9 +251,15 @@ const ChildProgressOverview = ({ route }) => {
         {/* Mistake Distribution */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Mistake Distribution</Text>
+          {mistakeData.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>✨</Text>
+              <Text style={styles.emptyText}>No mistakes recorded yet!</Text>
+            </View>
+          ) : (
           <View style={styles.chartContainer}>
             <PieChart
-              data={mistakeDistribution}
+              data={mistakeData}
               width={screenWidth - 60}
               height={220}
               chartConfig={{
@@ -119,28 +273,34 @@ const ChildProgressOverview = ({ route }) => {
               style={styles.chart}
             />
           </View>
+          )}
           <Text style={styles.chartNote}>Most common mistakes this week</Text>
         </View>
 
         {/* Lesson Completion Progress */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Lesson Completion</Text>
-          {lessonProgress.map((lesson, index) => (
+          {lessonProgress.map((lesson, index) => {
+            const progressPercent = lesson.total > 0 
+              ? Math.round((lesson.progress / lesson.total) * 100) 
+              : 0;
+            return (
             <View key={index} style={styles.progressItem}>
               <View style={styles.progressHeader}>
                 <Text style={styles.progressLabel}>{lesson.name}</Text>
-                <Text style={styles.progressPercentage}>{lesson.progress}%</Text>
+                <Text style={styles.progressPercentage}>{lesson.progress}/{lesson.total || '?'}</Text>
               </View>
               <View style={styles.progressBarContainer}>
                 <LinearGradient
                   colors={[lesson.color, lesson.color + '80']}
-                  style={[styles.progressBarFill, { width: `${lesson.progress}%` }]}
+                  style={[styles.progressBarFill, { width: `${Math.min(progressPercent, 100)}%` }]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 />
               </View>
             </View>
-          ))}
+            );
+          })}
         </View>
 
       </ScrollView>
@@ -151,6 +311,31 @@ const ChildProgressOverview = ({ route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#0A7D4F',
+    fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 30,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+  },
+  emptyIcon: {
+    fontSize: 40,
+    marginBottom: 10,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#666',
   },
   header: {
     padding: 20,

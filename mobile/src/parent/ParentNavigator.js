@@ -1,6 +1,5 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import ParentLogin from './ParentLogin';
 import ParentBottomTabNavigator from './ParentBottomTabNavigator';
 import LessonActivityDetails from './LessonActivityDetails';
 import MistakeLog from './MistakeLog';
@@ -12,15 +11,11 @@ const Stack = createNativeStackNavigator();
 const ParentNavigator = () => {
   return (
     <Stack.Navigator
+      initialRouteName="ParentMain"
       screenOptions={{
         headerShown: false,
       }}
     >
-      <Stack.Screen 
-        name="ParentLogin" 
-        component={ParentLogin}
-        options={{ title: 'Parent Login' }}
-      />
       <Stack.Screen 
         name="ParentMain" 
         component={ParentBottomTabNavigator}
