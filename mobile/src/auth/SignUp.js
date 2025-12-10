@@ -16,6 +16,7 @@ import { Dropdown } from 'react-native-element-dropdown';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
 import LinearGradient from 'react-native-linear-gradient';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { useAuth } from '../context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -43,6 +44,8 @@ const SignupSchema = Yup.object().shape({
 const SignUp = ({ navigation }) => {
   const { signup } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const roleData = [
     { label: 'Child', value: 'child' },
@@ -132,29 +135,53 @@ const SignUp = ({ navigation }) => {
               )}
 
               {/* Password */}
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor="#6C8A7A"
-                secureTextEntry
-                value={values.password}
-                onChangeText={handleChange('password')}
-                onBlur={handleBlur('password')}
-              />
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="Password"
+                  placeholderTextColor="#6C8A7A"
+                  secureTextEntry={!showPassword}
+                  value={values.password}
+                  onChangeText={handleChange('password')}
+                  onBlur={handleBlur('password')}
+                />
+                <TouchableOpacity
+                  style={styles.eyeIcon}
+                  onPress={() => setShowPassword(!showPassword)}
+                >
+                  <Icon
+                    name={showPassword ? 'eye-off' : 'eye'}
+                    size={24}
+                    color="#6C8A7A"
+                  />
+                </TouchableOpacity>
+              </View>
               {errors.password && touched.password && (
                 <Text style={styles.error}>{errors.password}</Text>
               )}
 
               {/* Confirm Password */}
-              <TextInput
-                style={styles.input}
-                placeholder="Confirm Password"
-                placeholderTextColor="#6C8A7A"
-                secureTextEntry
-                value={values.confirmPass}
-                onChangeText={handleChange('confirmPass')}
-                onBlur={handleBlur('confirmPass')}
-              />
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="Confirm Password"
+                  placeholderTextColor="#6C8A7A"
+                  secureTextEntry={!showConfirmPassword}
+                  value={values.confirmPass}
+                  onChangeText={handleChange('confirmPass')}
+                  onBlur={handleBlur('confirmPass')}
+                />
+                <TouchableOpacity
+                  style={styles.eyeIcon}
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                >
+                  <Icon
+                    name={showConfirmPassword ? 'eye-off' : 'eye'}
+                    size={24}
+                    color="#6C8A7A"
+                  />
+                </TouchableOpacity>
+              </View>
               {errors.confirmPass && touched.confirmPass && (
                 <Text style={styles.error}>{errors.confirmPass}</Text>
               )}
@@ -264,6 +291,28 @@ const styles = StyleSheet.create({
     color: '#0A7D4F',
     fontSize: 16,
     elevation: 2,
+  },
+
+  passwordContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#FAFAFA',
+    borderRadius: 15,
+    marginBottom: 10,
+    elevation: 2,
+  },
+
+  passwordInput: {
+    flex: 1,
+    padding: 15,
+    color: '#0A7D4F',
+    fontSize: 16,
+  },
+
+  eyeIcon: {
+    paddingHorizontal: 15,
   },
 
   dropdown: {
