@@ -65,7 +65,7 @@ export default function Login({navigation}) {
                 <TextInput
                   style={styles.input}
                   placeholder="Email"
-                  placeholderTextColor="#999"
+                  placeholderTextColor="#6C8A7A"
                   value={values.email}
                   onChangeText={handleChange("email")}
                   onBlur={handleBlur("email")}
@@ -82,7 +82,7 @@ export default function Login({navigation}) {
                   <TextInput
                     style={styles.passwordInput}
                     placeholder="Password"
-                    placeholderTextColor="#999"
+                    placeholderTextColor="#6C8A7A"
                     value={values.password}
                     onChangeText={handleChange("password")}
                     onBlur={handleBlur("password")}
@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
     shadowRadius: 15,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '900',
     color: '#0A7D4F',
     textAlign: 'center',

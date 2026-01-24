@@ -59,10 +59,18 @@ export default function ChangePasswordScreen() {
         {/* Profile Header */}
         <View style={styles.profileHeader}>
           <View style={styles.imageWrapper}>
-            <Image
-              style={styles.profileImage}
-              source={user?.profileImage ? { uri: user.profileImage } : require("../assests/profile.jpeg")}
-            />
+            {user?.profileImage ? (
+              <Image
+                style={styles.profileImage}
+                source={{ uri: user.profileImage }}
+              />
+            ) : (
+              <View style={[styles.profileImage, styles.initialsContainer]}>
+                <Text style={styles.initialsText}>
+                  {user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U'}
+                </Text>
+              </View>
+            )}
           </View>
           <View style={styles.textWrapper}>
             <Text style={styles.name}>{user?.name || 'User'}</Text>
@@ -89,7 +97,7 @@ export default function ChangePasswordScreen() {
                   onChangeText={handleChange("currentPassword")}
                   onBlur={handleBlur("currentPassword")}
                   value={values.currentPassword}
-                  placeholderTextColor="#999"
+                  placeholderTextColor="#6C8A7A"
                 />
                 <TouchableOpacity 
                   onPress={() => setShowCurrent(!showCurrent)}
@@ -111,7 +119,7 @@ export default function ChangePasswordScreen() {
                   onChangeText={handleChange("newPassword")}
                   onBlur={handleBlur("newPassword")}
                   value={values.newPassword}
-                  placeholderTextColor="#999"
+                  placeholderTextColor="#6C8A7A"
                 />
                 <TouchableOpacity 
                   onPress={() => setShowNew(!showNew)}
@@ -133,7 +141,7 @@ export default function ChangePasswordScreen() {
                   onChangeText={handleChange("confirmPassword")}
                   onBlur={handleBlur("confirmPassword")}
                   value={values.confirmPassword}
-                  placeholderTextColor="#999"
+                  placeholderTextColor="#6C8A7A"
                 />
                 <TouchableOpacity 
                   onPress={() => setShowConfirm(!showConfirm)}
@@ -201,6 +209,16 @@ const styles = StyleSheet.create({
     resizeMode: "cover",
     borderRadius: 65,
   },
+  initialsContainer: {
+    backgroundColor: '#0A7D4F',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  initialsText: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
   textWrapper: {
     alignItems: "center",
   },
@@ -216,7 +234,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   title: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: "900",
     marginBottom: 25,
     color: "#0A7D4F",
@@ -225,23 +243,23 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 2,
-    borderColor: "#E0E0E0",
-    backgroundColor: '#FFFFFF',
+    borderColor: "#E8F5E9",
+    backgroundColor: '#FAFAFA',
     borderRadius: 15,
     padding: 15,
     marginBottom: 10,
     fontSize: 16,
     elevation: 3,
-    color: '#000000',
+    color: '#0A7D4F',
   },
   passwordInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: '#E8F5E9',
     borderRadius: 15,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAFAFA',
     paddingRight: 10,
     elevation: 3,
   },
@@ -249,7 +267,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 15,
     fontSize: 16,
-    color: '#000000',
+    color: '#0A7D4F',
   },
   iconButton: {
     padding: 10,

@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '900',
     color: '#0A7D4F',
     textAlign: 'center',
@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
 
   input: {
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: '#E8F5E9',
     backgroundColor: '#FAFAFA',
     padding: 15,
     borderRadius: 15,
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: '#E8F5E9',
     backgroundColor: '#FAFAFA',
     borderRadius: 15,
     marginBottom: 10,
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
 
   dropdown: {
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: '#E8F5E9',
     backgroundColor: '#FAFAFA',
     borderRadius: 15,
     padding: 15,

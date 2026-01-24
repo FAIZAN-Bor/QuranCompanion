@@ -238,7 +238,7 @@ const LearnerSurvey = ({ navigation }) => {
                 <TextInput
                   style={styles.otherInput}
                   placeholder="Please specify your goal..."
-                  placeholderTextColor="#999"
+                  placeholderTextColor="#6C8A7A"
                   value={otherGoalText}
                   onChangeText={setOtherGoalText}
                   multiline
@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: '#E8F5E9',
     marginBottom: 10,
   },
   optionButtonSelected: {
@@ -507,7 +507,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: '#E8F5E9',
   },
   resultTitle: {
     fontSize: 22,

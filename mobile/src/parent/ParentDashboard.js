@@ -7,12 +7,12 @@ import { useAuth } from '../context/AuthContext';
 
 // Quick access menu items
 const quickAccessItems = [
-  { id: 1, title: 'Progress Overview', icon: '📊', screen: 'Progress', isTab: true, color: '#42A5F5' },
-  { id: 2, title: 'Lesson Details', icon: '📚', screen: 'LessonActivityDetails', isTab: false, color: '#7B1FA2' },
-  { id: 3, title: 'Mistake Log', icon: '⚠️', screen: 'MistakeLog', isTab: false, color: '#EF5350' },
-  { id: 4, title: 'Quiz Results', icon: '✍️', screen: 'QuizResults', isTab: false, color: '#FFA726' },
-  { id: 5, title: 'Achievements', icon: '🏆', screen: 'AchievementsRewards', isTab: false, color: '#FFD700' },
-  { id: 6, title: 'Activity Timeline', icon: '⏱️', screen: 'Activity', isTab: true, color: '#26C6DA' },
+  { id: 1, title: 'Progress Overview', icon: require('../assests/ProgressOverview.png'), screen: 'Progress', isTab: true, color: '#42A5F5' },
+  { id: 2, title: 'Lesson Details', icon: require('../assests/LessonDetails.png'), screen: 'LessonActivityDetails', isTab: false, color: '#7B1FA2' },
+  { id: 3, title: 'Mistake Log', icon: require('../assests/MistakeLog.png'), screen: 'MistakeLog', isTab: false, color: '#EF5350' },
+  { id: 4, title: 'Quiz Results', icon: require('../assests/QuizResult.png'), screen: 'QuizResults', isTab: false, color: '#FFA726' },
+  { id: 5, title: 'Achievements', icon: require('../assests/Achievements.png'), screen: 'AchievementsRewards', isTab: false, color: '#FFD700' },
+  { id: 6, title: 'Activity Timeline', icon: require('../assests/ActivitTimeline.png'), screen: 'Activity', isTab: true, color: '#26C6DA' },
 ];
 
 const ParentDashboard = () => {
@@ -198,7 +198,9 @@ const ParentDashboard = () => {
                     style={styles.profileImage}
                   />
                 ) : (
-                  <Text style={styles.profileIcon}>👤</Text>
+                  <Text style={styles.profileInitials}>
+                    {user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U'}
+                  </Text>
                 )}
               </View>
             </TouchableOpacity>
@@ -235,7 +237,9 @@ const ParentDashboard = () => {
                           style={styles.childProfileImage}
                         />
                       ) : (
-                        <Text style={styles.childAvatarEmoji}>👦</Text>
+                        <Text style={styles.childAvatarInitials}>
+                          {childLink.child.name ? childLink.child.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'C'}
+                        </Text>
                       )}
                     </View>
                     <Text style={[
@@ -320,12 +324,10 @@ const ParentDashboard = () => {
                 style={styles.quickAccessTouchable}
               >
                 <LinearGradient
-                  colors={['#FFFFFF', '#E8F5E9']}
+                  colors={['#FFFFFF', '#F1F8E9']}
                   style={styles.quickAccessCard}
                 >
-                  <View style={[styles.iconContainer, { backgroundColor: item.color }]}>
-                    <Text style={styles.quickAccessIconEmoji}>{item.icon}</Text>
-                  </View>
+                  <Image source={item.icon} style={styles.quickAccessIcon} />
                   <Text 
                     style={styles.quickAccessTitle}
                     numberOfLines={2}
@@ -445,6 +447,11 @@ const styles = StyleSheet.create({
   profileIcon: {
     fontSize: 24,
   },
+  profileInitials: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
   section: {
     marginBottom: 25,
     paddingHorizontal: 20,
@@ -508,6 +515,11 @@ const styles = StyleSheet.create({
   },
   childAvatarEmoji: {
     fontSize: 40,
+  },
+  childAvatarInitials: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#0A7D4F',
   },
   childImage: {
     width: 50,
@@ -641,19 +653,21 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   quickAccessIcon: {
-    width: 30,
-    height: 30,
-    tintColor: '#FFFFFF',
+    width: 50,
+    height: 50,
+    marginBottom: 10,
+    resizeMode: 'contain',
   },
   quickAccessIconEmoji: {
-    fontSize: 30,
+    fontSize: 42,
+    marginBottom: 10,
   },
   quickAccessTitle: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '800',
     color: '#0A7D4F',
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 16,
     width: '100%',
   },
 });

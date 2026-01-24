@@ -86,10 +86,18 @@ export default function SettingScreen({ navigation }) {
 
       <View style={styles.profileHeader}>
         <View style={styles.imageWrapper}>
-          <Image
-            style={styles.profileImage}
-            source={user?.profileImage ? { uri: user.profileImage } : require("../assests/profile.jpeg")}
-          />
+          {user?.profileImage ? (
+            <Image
+              style={styles.profileImage}
+              source={{ uri: user.profileImage }}
+            />
+          ) : (
+            <View style={[styles.profileImage, styles.initialsContainer]}>
+              <Text style={styles.initialsText}>
+                {user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U'}
+              </Text>
+            </View>
+          )}
         </View>
         <View style={styles.textWrapper}>
           <Text style={styles.name}>{user?.name || 'User'}</Text>
@@ -161,7 +169,7 @@ export default function SettingScreen({ navigation }) {
             <TextInput
               style={styles.linkCodeInput}
               placeholder="ABC123"
-              placeholderTextColor="#999"
+              placeholderTextColor="#6C8A7A"
               value={linkCode}
               onChangeText={setLinkCode}
               maxLength={6}
@@ -202,7 +210,7 @@ export default function SettingScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex:1, padding: 20 },
-  title: { fontSize: 32, fontWeight: "900", marginBottom: 30, color: "#0A7D4F", textAlign: 'center', letterSpacing: 0.5 },
+  title: { fontSize: 28, fontWeight: "900", marginBottom: 30, color: "#0A7D4F", textAlign: 'center', letterSpacing: 0.5 },
   profileHeader: { alignItems: "center", marginBottom: 30 },
   imageWrapper: { 
     borderRadius: 75, 
@@ -222,6 +230,16 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   profileImage: { width: 130, height: 130, resizeMode: "cover", borderRadius: 65 },
+  initialsContainer: {
+    backgroundColor: '#0A7D4F',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  initialsText: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
   textWrapper: { alignItems: "center" },
   name: { fontSize: 22, fontWeight: "900", color: "#0A7D4F" },
   email: { fontSize: 14, color: "#666", marginTop: 6, fontWeight: '600' },

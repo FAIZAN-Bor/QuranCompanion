@@ -281,7 +281,7 @@ const logout = async (req, res, next) => {
   }
 };
 
-// @desc    Forgot password
+// @desc    Forgot password - Send OTP
 // @route   POST /api/auth/forgot-password
 // @access  Public
 const forgotPassword = async (req, res, next) => {
@@ -296,34 +296,24 @@ const forgotPassword = async (req, res, next) => {
       });
     }
 
-    // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    
-    // Hash token and set to resetPasswordToken field
-    user.resetPasswordToken = crypto
-      .createHash('sha256')
-      .update(resetToken)
-      .digest('hex');
-    
-    // Set expire time (10 minutes)
-    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000;
-    
+    // Generate OTP for password reset
+    const otp = user.generateOTP();
     await user.save({ validateBeforeSave: false });
 
-    // Send email with reset token
+    // Send OTP email
     try {
-      await sendPasswordResetEmail(email, resetToken, user.name);
+      await sendOTPEmail(email, otp, user.name);
       
       res.status(200).json({
         success: true,
-        message: 'Password reset link sent to your email',
+        message: 'OTP sent to your email for password reset',
         data: {
-          resetToken // Only for testing - remove in production
+          email: user.email
         }
       });
     } catch (emailError) {
-      user.resetPasswordToken = undefined;
-      user.resetPasswordExpires = undefined;
+      user.otp = undefined;
+      user.otpExpiry = undefined;
       await user.save({ validateBeforeSave: false });
       
       return res.status(500).json({
@@ -336,53 +326,71 @@ const forgotPassword = async (req, res, next) => {
   }
 };
 
-// @desc    Reset password
+// @desc    Verify OTP for password reset
+// @route   POST /api/auth/verify-reset-otp
+// @access  Public
+const verifyResetOTP = async (req, res, next) => {
+  try {
+    const { email, otp } = req.body;
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Verify OTP
+    if (!user.verifyOTP(otp)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired OTP'
+      });
+    }
+
+    // Don't clear OTP yet - it will be cleared after password reset
+    res.status(200).json({
+      success: true,
+      message: 'OTP verified successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Reset password with OTP
 // @route   POST /api/auth/reset-password
 // @access  Public
 const resetPassword = async (req, res, next) => {
   try {
-    const { resetToken, newPassword } = req.body;
+    const { email, otp, newPassword } = req.body;
 
-    // Hash the token from params
-    const hashedToken = crypto
-      .createHash('sha256')
-      .update(resetToken)
-      .digest('hex');
-
-    // Find user with valid token
-    const user = await User.findOne({
-      resetPasswordToken: hashedToken,
-      resetPasswordExpires: { $gt: Date.now() }
-    });
-
+    const user = await User.findOne({ email }).select('+password');
     if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Verify OTP one more time
+    if (!user.verifyOTP(otp)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid or expired reset token'
+        message: 'Invalid or expired OTP'
       });
     }
 
     // Set new password
     user.password = newPassword;
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
+    user.otp = undefined;
+    user.otpExpiry = undefined;
     await user.save();
-
-    // Generate new JWT token
-    const token = generateToken(user._id, user.role);
 
     res.status(200).json({
       success: true,
-      message: 'Password reset successful',
-      data: {
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        },
-        token
-      }
+      message: 'Password reset successful'
     });
   } catch (error) {
     next(error);
@@ -397,5 +405,6 @@ module.exports = {
   getMe,
   logout,
   forgotPassword,
+  verifyResetOTP,
   resetPassword
 };
