@@ -25,11 +25,14 @@ const ForgetPassword = ({ navigation }) => {
       if (response.success) {
         Alert.alert(
           'Success',
-          'Password reset link has been sent to your email. Please check your inbox.',
+          'OTP has been sent to your email. Please verify to reset your password.',
           [
             { 
               text: 'OK', 
-              onPress: () => navigation.navigate('Login') 
+              onPress: () => navigation.navigate('Otp', { 
+                email: values.email, 
+                isPasswordReset: true 
+              }) 
             }
           ]
         );
@@ -37,7 +40,7 @@ const ForgetPassword = ({ navigation }) => {
     } catch (error) {
       Alert.alert(
         'Error',
-        error.message || 'Failed to send reset link. Please try again.'
+        error.message || 'Failed to send OTP. Please try again.'
       );
     } finally {
       setLoading(false);
@@ -90,7 +93,7 @@ const ForgetPassword = ({ navigation }) => {
                   {loading ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.buttonText}>Send Reset Link</Text>
+                    <Text style={styles.buttonText}>Send OTP</Text>
                   )}
                 </LinearGradient>
               </TouchableOpacity>
@@ -132,7 +135,7 @@ const styles = StyleSheet.create({
     shadowRadius: 15,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '900',
     color: '#0A7D4F',
     textAlign: 'center',
@@ -148,7 +151,7 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: '#E8F5E9',
     backgroundColor: '#FAFAFA',
     padding: 15,
     borderRadius: 15,

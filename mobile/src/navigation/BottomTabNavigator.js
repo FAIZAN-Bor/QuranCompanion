@@ -16,8 +16,23 @@ export default function BottomTabNavigator() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: '#0A7D4F',
-        tabBarInactiveTintColor: 'gray',
-        tabBarStyle: { paddingVertical: 5, height: 60 },
+        tabBarInactiveTintColor: '#9E9E9E',
+        tabBarStyle: {
+          paddingVertical: 5,
+          height: 60,
+          backgroundColor: '#FFFFFF',
+          borderTopWidth: 1,
+          borderTopColor: '#F0F0F0',
+          elevation: 8,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 3,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
+        },
       }}
     >
       <Tab.Screen 

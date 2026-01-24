@@ -102,7 +102,7 @@ class AuthService {
     }
   }
 
-  // Forgot password
+  // Forgot password - Send OTP
   async forgotPassword(email) {
     try {
       const response = await api.post('/auth/forgot-password', { email });
@@ -112,20 +112,24 @@ class AuthService {
     }
   }
 
-  // Reset password
-  async resetPassword(resetToken, newPassword) {
+  // Verify OTP for password reset
+  async verifyResetOTP(email, otp) {
+    try {
+      const response = await api.post('/auth/verify-reset-otp', { email, otp });
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // Reset password with OTP
+  async resetPasswordWithOTP(email, otp, newPassword) {
     try {
       const response = await api.post('/auth/reset-password', { 
-        resetToken, 
+        email,
+        otp,
         newPassword 
       });
-      
-      if (response.data.data?.token) {
-        const { token, user } = response.data.data;
-        await AsyncStorage.setItem('authToken', token);
-        await AsyncStorage.setItem('userData', JSON.stringify(user));
-      }
-      
       return response.data;
     } catch (error) {
       throw this.handleError(error);

@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: "900",
     color: "#0A7D4F",
     letterSpacing: 0.5,
