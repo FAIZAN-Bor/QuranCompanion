@@ -50,7 +50,7 @@ const Onboarding = ({ navigation }) => {
   // --- Custom Buttons ---
   const renderNextButton = () => (
     <LinearGradient
-      colors={['#0A7D4F', '#15B872']}
+      colors={['#0A7D4F', '#0F9D63', '#15B872']}
       style={styles.buttonContainer}
       start={{x: 0, y: 0}}
       end={{x: 1, y: 0}}
@@ -67,7 +67,7 @@ const Onboarding = ({ navigation }) => {
 
   const renderDoneButton = () => (
     <LinearGradient
-      colors={['#0A7D4F', '#15B872']}
+      colors={['#0A7D4F', '#0F9D63', '#15B872']}
       style={styles.buttonContainer}
       start={{x: 0, y: 0}}
       end={{x: 1, y: 0}}

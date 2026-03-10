@@ -13,17 +13,21 @@ export default function Otp({ navigation, route }) {
   const [isResending, setIsResending] = useState(false);
   const [email, setEmail] = useState('');
   const [userRole, setUserRole] = useState('child');
+  const [isPasswordReset, setIsPasswordReset] = useState(false);
   const { verifyOTP } = useAuth();
   const inputRefs = useRef([]);
 
   useEffect(() => {
-    // Get email and role from route params or AsyncStorage
+    // Get email, role, and password reset flag from route params or AsyncStorage
     const getEmail = async () => {
       const emailParam = route.params?.email;
       const roleParam = route.params?.role || 'child';
+      const isPasswordResetParam = route.params?.isPasswordReset || false;
+      
       if (emailParam) {
         setEmail(emailParam);
         setUserRole(roleParam);
+        setIsPasswordReset(isPasswordResetParam);
       } else {
         const storedEmail = await AsyncStorage.getItem('pendingEmail');
         const storedRole = await AsyncStorage.getItem('pendingRole');
@@ -64,30 +68,45 @@ export default function Otp({ navigation, route }) {
     }
 
     if (!email) {
-      Alert.alert('Error', 'Email not found. Please sign up again.');
-      navigation.navigate('SignUp');
+      Alert.alert('Error', 'Email not found. Please try again.');
+      navigation.navigate(isPasswordReset ? 'ForgetPassword' : 'SignUp');
       return;
     }
 
     try {
       setIsLoading(true);
-      const response = await verifyOTP(email, enteredOtp);
       
-      // Clear pending email and role
-      await AsyncStorage.removeItem('pendingEmail');
-      await AsyncStorage.removeItem('pendingRole');
-      
-      Alert.alert('Success', 'Account verified successfully!');
-      
-      // Navigate based on user role
-      if (userRole === 'parent') {
-        // Parent goes directly to parent dashboard (skip ParentLogin screen)
-        navigation.replace('ParentNavigator', {
-          screen: 'ParentMain'
-        });
+      if (isPasswordReset) {
+        // For password reset flow
+        const response = await authService.verifyResetOTP(email, enteredOtp);
+        
+        if (response.success) {
+          Alert.alert('Success', 'OTP verified! Please set your new password.');
+          navigation.navigate('ResetPassword', { 
+            email: email, 
+            otp: enteredOtp 
+          });
+        }
       } else {
-        // Child/Learner goes to survey first
-        navigation.replace('LearnerSurvey');
+        // For signup verification flow
+        const response = await verifyOTP(email, enteredOtp);
+        
+        // Clear pending email and role
+        await AsyncStorage.removeItem('pendingEmail');
+        await AsyncStorage.removeItem('pendingRole');
+        
+        Alert.alert('Success', 'Account verified successfully!');
+        
+        // Navigate based on user role
+        if (userRole === 'parent') {
+          // Parent goes directly to parent dashboard
+          navigation.replace('ParentNavigator', {
+            screen: 'ParentMain'
+          });
+        } else {
+          // Child/Learner goes to survey first
+          navigation.replace('LearnerSurvey');
+        }
       }
     } catch (error) {
       Alert.alert('Error', error.message || 'Invalid OTP. Please try again.');
@@ -122,7 +141,10 @@ export default function Otp({ navigation, route }) {
       style={styles.wrapper}
     >
       <View style={styles.container}>
-         <Image style={{ alignSelf:'center', marginTop:5, marginBottom:5, width:70,height:70,borderRadius:10}} source={require('../assests/Logo.jpg')}/>
+        <Image 
+          style={{ alignSelf:'center', marginBottom: 15, width: 70, height: 70, borderRadius: 10 }} 
+          source={require('../assests/Logo.jpg')}
+        />
         <Text style={styles.title}>OTP Verification</Text>
         <Text style={styles.subtitle}>Enter the 4-digit code sent to your email</Text>
         {email ? (
@@ -192,18 +214,24 @@ const styles = StyleSheet.create({
     shadowRadius: 15,
   },
   title: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '900',
     color: '#0A7D4F',
     marginBottom: 10,
     letterSpacing: 0.5,
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 16,
     color: '#666',
     textAlign: 'center',
-    marginBottom: 35,
-    fontWeight: '500',
+    marginBottom: 10,
+    fontWeight: '600',
+  },
+  emailText: {
+    fontSize: 14,
+    color: '#0A7D4F',
+    fontWeight: '700',
+    marginBottom: 25,
   },
   otpContainer: {
     flexDirection: 'row',
@@ -215,7 +243,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: '#E8F5E9',
     borderRadius: 15,
     textAlign: 'center',
     fontSize: 24,
@@ -238,8 +266,8 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '600',
     letterSpacing: 1,
   },
   resend: {

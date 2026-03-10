@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
     opacity: 0.3,
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '900',
     color: '#0A7D4F',
     textAlign: 'center',

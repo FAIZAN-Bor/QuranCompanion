@@ -8,6 +8,7 @@ import SignUp from './auth/SignUp';
 import Login from './auth/Login';
 import Otp from './auth/Otp';
 import ForgetPassword from './auth/forgetPassword';
+import ResetPassword from './auth/ResetPassword';
 import LearnerSurvey from './auth/LearnerSurvey';
 
 import DuaLearn from './home/DuaLearn';  
@@ -43,7 +44,8 @@ const navigation = () => {
          <Stack.Screen name="Login" component={Login} /> 
             <Stack.Screen name="Otp" component={Otp} /> 
             <Stack.Screen name="LearnerSurvey" component={LearnerSurvey} />
-            <Stack.Screen name="ForgetPassword" component={ForgetPassword} /> 
+            <Stack.Screen name="ForgetPassword" component={ForgetPassword} />
+            <Stack.Screen name="ResetPassword" component={ResetPassword} /> 
                 <Stack.Screen name="DuaLearn" component={DuaLearn}  options={{title:'Dua Screen',headerShown: true ,headerTintColor:'#2b624c'}}/> 
                 <Stack.Screen name="DuaDetail" component={DuaDetail}  options={{title:'Dua Detail',headerShown: true ,headerTintColor:'#2b624c'}}/> 
                 <Stack.Screen name="Quran" component={Quran}options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}} /> 
