@@ -29,6 +29,7 @@ import ChangPasswordScreen from './Setting/ChangePasswordScreen';
 import EditProfile from './Setting/EditProfile';
 import ParentNavigator from './parent/ParentNavigator';
 import MistakePractice from './DrawerScreen/MistakePractice';
+import RecitationResult from './home/RecitationResult';
 
 
 const Stack = createNativeStackNavigator();
@@ -66,6 +67,9 @@ const navigation = () => {
       
       {/* Mistake Practice Screen */}
       <Stack.Screen name="MistakePractice" component={MistakePractice} options={{title:'Practice Mistake',headerShown: true ,headerTintColor:'#2b624c'}}/>
+      
+      {/* Recitation Result Screen */}
+      <Stack.Screen name="RecitationResult" component={RecitationResult} options={{title:'Recitation Result',headerShown: true ,headerTintColor:'#2b624c'}}/>
       
       {/* Parent Screens */}
       <Stack.Screen name="ParentNavigator" component={ParentNavigator} />

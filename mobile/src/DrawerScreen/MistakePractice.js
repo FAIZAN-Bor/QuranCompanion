@@ -12,29 +12,33 @@ import {
 } from "react-native";
 import LinearGradient from 'react-native-linear-gradient';
 import mistakeService from '../services/mistakeService';
+import { analyzeRecitation } from '../services/recitationService';
+import useAudioRecorder from '../hooks/useAudioRecorder';
 
 export default function MistakePractice({ route, navigation }) {
   const { mistake } = route.params;
   
-  const [isRecording, setIsRecording] = useState(false);
-  const [hasRecorded, setHasRecorded] = useState(false);
-  const [recordTime, setRecordTime] = useState(0);
+  const {
+    isRecording,
+    recordingTime,
+    recordingSeconds,
+    audioPath,
+    isPlaying,
+    startRecording: startAudioRecording,
+    stopRecording: stopAudioRecording,
+    playRecording,
+    stopPlayback,
+    resetRecording,
+  } = useAudioRecorder();
+
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [practiceAttempts, setPracticeAttempts] = useState(0);
   const [feedback, setFeedback] = useState(null);
   
   // Animation for recording indicator
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const recordingTimer = useRef(null);
-
-  useEffect(() => {
-    return () => {
-      // Cleanup on unmount
-      if (recordingTimer.current) {
-        clearInterval(recordingTimer.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (isRecording) {
@@ -134,34 +138,85 @@ export default function MistakePractice({ route, navigation }) {
     return match ? match[1] : 'ا';
   };
 
-  const startRecording = () => {
-    setIsRecording(true);
-    setRecordTime(0);
-    
-    // Start timer
-    recordingTimer.current = setInterval(() => {
-      setRecordTime(prev => prev + 1);
-    }, 1000);
+  const startRecording = async () => {
+    setAnalysisResult(null);
+    setFeedback(null);
+    await startAudioRecording();
   };
 
-  const stopRecording = () => {
-    setIsRecording(false);
-    setHasRecorded(true);
-    
-    if (recordingTimer.current) {
-      clearInterval(recordingTimer.current);
-      recordingTimer.current = null;
+  const stopRecording = async () => {
+    await stopAudioRecording();
+  };
+
+  const handleAnalyze = async () => {
+    if (!audioPath) {
+      Alert.alert('Record First', 'Please record your pronunciation before analyzing.');
+      return;
+    }
+
+    setAnalyzing(true);
+    try {
+      // Build ground truth from mistake data
+      const groundTruth = getArabicFromDescription(mistake.description) || mistake.title || '';
+      const module = mistake.module || 'Qaida';
+
+      const result = await analyzeRecitation(
+        audioPath,
+        groundTruth,
+        module,
+        mistake.levelId || `${module.toLowerCase()}_1`,
+        mistake.lessonId || 'practice'
+      );
+
+      if (result?.success && result.data) {
+        setAnalysisResult(result.data);
+        setPracticeAttempts(prev => prev + 1);
+
+        const score = result.data.overallScore || 0;
+
+        // Auto-submit practice attempt based on AI score
+        try {
+          await mistakeService.submitPracticeAttempt(mistake._id, {
+            isCorrect: score >= 80,
+            attemptNumber: practiceAttempts + 1,
+            practiceTime: recordingSeconds,
+            audioPath: result.data.audioUrl || null,
+          });
+
+          if (score >= 80) {
+            setFeedback({
+              type: 'success',
+              title: 'Excellent!',
+              message: `You scored ${score}%! This mistake has been resolved.`
+            });
+          } else {
+            setFeedback({
+              type: 'info',
+              title: 'Keep Practicing',
+              message: `You scored ${score}%. Try again to improve your pronunciation.`
+            });
+          }
+        } catch (submitErr) {
+          console.error('Submit practice error:', submitErr);
+        }
+      } else {
+        Alert.alert('Analysis Issue', 'Could not get analysis results. Please try again.');
+      }
+    } catch (error) {
+      console.error('Analysis error:', error);
+      Alert.alert('Analysis Error', error.message || 'Failed to analyze recitation.');
+    } finally {
+      setAnalyzing(false);
     }
   };
 
   const submitPractice = async (isCorrect) => {
     setSubmitting(true);
     try {
-      // Submit practice attempt to backend
       const response = await mistakeService.submitPracticeAttempt(mistake._id, {
         isCorrect: isCorrect,
         attemptNumber: practiceAttempts + 1,
-        practiceTime: recordTime
+        practiceTime: recordingSeconds
       });
 
       setPracticeAttempts(prev => prev + 1);
@@ -299,6 +354,7 @@ export default function MistakePractice({ route, navigation }) {
             <TouchableOpacity
               style={[styles.recordButton, isRecording && styles.recordingActive]}
               onPress={isRecording ? stopRecording : startRecording}
+              disabled={analyzing}
             >
               <LinearGradient
                 colors={isRecording ? ['#F44336', '#EF5350'] : ['#0A7D4F', '#15B872']}
@@ -306,7 +362,7 @@ export default function MistakePractice({ route, navigation }) {
               >
                 <Text style={styles.recordButtonIcon}>{isRecording ? '⏹' : '🎤'}</Text>
                 <Text style={styles.recordButtonText}>
-                  {isRecording ? 'Stop Recording' : 'Start Recording'}
+                  {isRecording ? 'Stop Recording' : (audioPath ? 'Record Again' : 'Start Recording')}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -316,16 +372,79 @@ export default function MistakePractice({ route, navigation }) {
           {isRecording && (
             <View style={styles.recordingIndicator}>
               <View style={styles.recordingDot} />
-              <Text style={styles.recordingTime}>{formatTime(recordTime)}</Text>
+              <Text style={styles.recordingTime}>{recordingTime}</Text>
             </View>
           )}
 
-          {/* Recorded confirmation */}
-          {hasRecorded && !isRecording && (
+          {/* Recorded - Analyze Button */}
+          {audioPath && !isRecording && !analysisResult && (
             <View style={styles.recordedConfirmation}>
-              <Text style={styles.recordedText}>✓ Recording Complete ({formatTime(recordTime)})</Text>
-              <TouchableOpacity onPress={() => { setHasRecorded(false); setRecordTime(0); }}>
-                <Text style={styles.rerecordText}>Tap mic to record again</Text>
+              <Text style={styles.recordedText}>Recording Complete</Text>
+              <View style={styles.postRecordActions}>
+                <TouchableOpacity onPress={isPlaying ? stopPlayback : playRecording} style={styles.playBtn}>
+                  <Text style={styles.playBtnText}>{isPlaying ? '⏹ Stop' : '▶ Play'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleAnalyze} disabled={analyzing} style={styles.analyzeBtn}>
+                  <LinearGradient
+                    colors={['#0A7D4F', '#15B872']}
+                    style={styles.analyzeBtnGradient}
+                  >
+                    {analyzing ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.analyzeBtnText}>Analyze with AI</Text>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Analyzing indicator */}
+          {analyzing && (
+            <View style={styles.analyzingContainer}>
+              <ActivityIndicator size="large" color="#0A7D4F" />
+              <Text style={styles.analyzingText}>Analyzing your recitation...</Text>
+            </View>
+          )}
+
+          {/* AI Analysis Result */}
+          {analysisResult && (
+            <View style={styles.aiResultCard}>
+              <Text style={styles.aiResultTitle}>AI Analysis Result</Text>
+              <Text style={[styles.aiScoreText, { 
+                color: (analysisResult.overallScore || 0) >= 80 ? '#0A7D4F' : (analysisResult.overallScore || 0) >= 60 ? '#FFA726' : '#E53935' 
+              }]}>
+                {analysisResult.overallScore || 0}%
+              </Text>
+              <View style={styles.aiScoreBreakdown}>
+                <View style={styles.aiScoreItem}>
+                  <Text style={styles.aiScoreLabel}>Text</Text>
+                  <Text style={styles.aiScoreValue}>{analysisResult.accuracyScore || 0}%</Text>
+                </View>
+                <View style={styles.aiScoreItem}>
+                  <Text style={styles.aiScoreLabel}>Pronunciation</Text>
+                  <Text style={styles.aiScoreValue}>{analysisResult.pronunciationScore || 0}%</Text>
+                </View>
+                <View style={styles.aiScoreItem}>
+                  <Text style={styles.aiScoreLabel}>Tajweed</Text>
+                  <Text style={styles.aiScoreValue}>{analysisResult.tajweedScore || 0}%</Text>
+                </View>
+              </View>
+              {analysisResult.mistakes?.length > 0 && (
+                <View style={styles.aiMistakes}>
+                  {analysisResult.mistakes.slice(0, 3).map((m, i) => (
+                    <Text key={i} style={styles.aiMistakeText}>
+                      • {m.suggestion || `${m.type}: "${m.word}"`}
+                    </Text>
+                  ))}
+                </View>
+              )}
+              <TouchableOpacity 
+                onPress={() => { setAnalysisResult(null); setFeedback(null); resetRecording(); }} 
+                style={styles.retryBtn}
+              >
+                <Text style={styles.retryBtnText}>Try Again</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -343,10 +462,10 @@ export default function MistakePractice({ route, navigation }) {
           </View>
         )}
 
-        {/* Self Assessment Buttons */}
-        {hasRecorded && !isRecording && !feedback && (
+        {/* Self Assessment Buttons - shown as fallback when AI analysis is not done */}
+        {audioPath && !isRecording && !analysisResult && !analyzing && (
           <View style={styles.assessmentSection}>
-            <Text style={styles.assessmentLabel}>How did you do?</Text>
+            <Text style={styles.assessmentLabel}>Or self-assess your recitation:</Text>
             
             <View style={styles.assessmentButtons}>
               <TouchableOpacity
@@ -692,5 +811,117 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 12,
     fontWeight: '600',
+  },
+  // Post-record actions
+  postRecordActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  playBtn: {
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  playBtnText: {
+    color: '#0A7D4F',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  analyzeBtn: {
+    borderRadius: 10,
+    overflow: 'hidden',
+    elevation: 4,
+  },
+  analyzeBtnGradient: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  analyzeBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  analyzingContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  analyzingText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0A7D4F',
+    marginTop: 10,
+  },
+  // AI Result styles
+  aiResultCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 20,
+    elevation: 4,
+    shadowColor: '#0A7D4F',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+  },
+  aiResultTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0A7D4F',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  aiScoreText: {
+    fontSize: 36,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  aiScoreBreakdown: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E8F5E9',
+  },
+  aiScoreItem: {
+    alignItems: 'center',
+  },
+  aiScoreLabel: {
+    fontSize: 12,
+    color: '#999',
+    fontWeight: '600',
+  },
+  aiScoreValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#333',
+    marginTop: 2,
+  },
+  aiMistakes: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E8F5E9',
+  },
+  aiMistakeText: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  retryBtn: {
+    backgroundColor: '#FFF3E0',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 15,
+  },
+  retryBtnText: {
+    color: '#F57C00',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });
