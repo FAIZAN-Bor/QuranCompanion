@@ -1,0 +1,14 @@
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+transformers>=4.37.0
+torch>=2.0.0
+torchaudio>=2.0.0
+accelerate>=0.26.0
+librosa>=0.10.0
+fastdtw>=0.3.4
+numpy>=1.24.0
+scipy>=1.11.0
+soundfile>=0.12.0
+pydub>=0.25.0
+jiwer>=3.0.0

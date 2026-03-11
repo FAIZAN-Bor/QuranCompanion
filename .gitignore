@@ -58,3 +58,10 @@ build/
 # React Native / Metro
 .metro-health-check*
 *.jsbundle
+
+# Python / AI specific
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
