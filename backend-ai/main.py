@@ -131,9 +131,9 @@ async def analyze_recitation(
                         reference_audio_url.lstrip('/'),
                         os.path.join('uploads', os.path.basename(reference_audio_url)),
                         reference_audio_url.replace('/', os.sep),
-                        # For local development - backend-node uploads folder
-                        os.path.join('..', 'backend-node', 'uploads', os.path.basename(reference_audio_url)),
-                        os.path.join('..', 'backend-node', reference_audio_url.lstrip('/')),
+                        # For local development - backend uploads folder
+                        os.path.join('..', 'backend', 'uploads', os.path.basename(reference_audio_url)),
+                        os.path.join('..', 'backend', reference_audio_url.lstrip('/')),
                     ]
                     
                     print(f"Looking for local reference audio. URL: {reference_audio_url}")
