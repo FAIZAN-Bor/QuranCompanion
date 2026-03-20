@@ -1,6 +1,6 @@
 // LevelDetail.js - Display lessons for a specific level
 
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -15,24 +15,26 @@ import LinearGradient from 'react-native-linear-gradient';
 
 const LevelDetail = ({ route, navigation }) => {
   const { level } = route.params;
-  const [lessons, setLessons] = useState(level.lessons);
+  const lessons = level.lessons || [];
 
   const completedCount = lessons.filter(l => l.completed).length;
   const totalCount = lessons.length;
-  const allCompleted = completedCount === totalCount;
+  const allCompleted = totalCount > 0 && completedCount === totalCount;
 
   const handleLessonPress = (lesson) => {
-    if (lesson.completed) {
-      Alert.alert('Already Completed', 'You have completed this lesson!');
-      return;
-    }
-
     // Navigate to appropriate lesson screen based on module
     if (level.module === 'Qaida') {
-      // Navigate to Quaida screen - will load from backend
+      // Navigate to specific Takhti content for this lesson
+      if (lesson.content) {
+        navigation.navigate('QuidaTaqkti', { data: lesson.content, levelId: level.id });
+        return;
+      }
       navigation.navigate('Quaida');
     } else if (level.module === 'Quran') {
-      // Navigate to Quran screen - will load from backend
+      if (lesson.content) {
+        navigation.navigate('AllAya', { data: lesson.content });
+        return;
+      }
       navigation.navigate('Quran');
     }
   };
@@ -99,7 +101,7 @@ const LevelDetail = ({ route, navigation }) => {
             <View style={styles.progressBar}>
               <LinearGradient
                 colors={['#0A7D4F', '#15B872']}
-                style={[styles.progressFill, { width: `${(completedCount / totalCount) * 100}%` }]}
+                style={[styles.progressFill, { width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
               />
@@ -117,8 +119,35 @@ const LevelDetail = ({ route, navigation }) => {
           showsVerticalScrollIndicator={false}
         >
           <Text style={styles.sectionTitle}>Lessons</Text>
-          
-          {lessons.map((lesson, index) => renderLesson(lesson, index))}
+
+          {lessons.length > 0 ? (
+            lessons.map((lesson, index) => renderLesson(lesson, index))
+          ) : (
+            <View style={styles.emptyLessonsCard}>
+              <Text style={styles.emptyLessonsTitle}>Coming Soon</Text>
+              <Text style={styles.emptyLessonsText}>This Takhti is not available yet.</Text>
+            </View>
+          )}
+
+          {level.quizRequired && (
+            <View style={styles.quizSection}>
+              <Text style={styles.quizTitle}>Level Quiz</Text>
+              <Text style={styles.quizDescription}>
+                Complete this quiz to unlock rewards and track your mastery for this Takhti.
+              </Text>
+              <TouchableOpacity activeOpacity={0.8} onPress={handleQuizPress}>
+                <LinearGradient
+                  colors={allCompleted ? ['#8B5CF6', '#6366F1'] : ['#9CA3AF', '#6B7280']}
+                  style={styles.quizButton}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Image source={require('../assests/quiz.png')} style={styles.quizIcon} />
+                  <Text style={styles.quizButtonText}>{allCompleted ? 'Start Quiz' : 'Complete Lessons First'}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          )}
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
@@ -247,6 +276,24 @@ const styles = StyleSheet.create({
   lessonStatus: {
     fontSize: 12,
     color: '#666',
+  },
+  emptyLessonsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  emptyLessonsTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0A7D4F',
+    marginBottom: 6,
+  },
+  emptyLessonsText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '600',
   },
   checkIcon: {
     width: 24,

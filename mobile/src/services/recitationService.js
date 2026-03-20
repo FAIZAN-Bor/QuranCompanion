@@ -34,7 +34,7 @@ recitationApi.interceptors.request.use(
  * @param {string} lessonId - Lesson identifier (optional)
  * @returns {Promise<object>} Analysis results
  */
-export const analyzeRecitation = async (audioPath, groundTruth, module, levelId, lessonId = null) => {
+export const analyzeRecitation = async (audioPath, groundTruth, module, levelId, lessonId = null, referenceAudioUrl = null) => {
   try {
     const formData = new FormData();
 
@@ -61,6 +61,9 @@ export const analyzeRecitation = async (audioPath, groundTruth, module, levelId,
     formData.append('levelId', levelId);
     if (lessonId) {
       formData.append('lessonId', lessonId);
+    }
+    if (referenceAudioUrl) {
+      formData.append('reference_audio_url', referenceAudioUrl);
     }
 
     const response = await recitationApi.post('/recitation/analyze', formData, {

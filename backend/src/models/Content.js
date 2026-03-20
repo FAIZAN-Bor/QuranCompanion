@@ -44,7 +44,16 @@ const contentSchema = new mongoose.Schema({
   },
   characters: [{
     arabic: String,
-    english: String
+    arabicText: String,
+    english: String,
+    transliteration: String,
+    translation: String,
+    audioUrl: String,
+    imageUrl: String,
+    difficulty: {
+      type: String,
+      default: 'beginner'
+    }
   }],
   
   // For Dua

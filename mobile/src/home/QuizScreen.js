@@ -81,7 +81,7 @@ const QuizScreen = ({ route, navigation }) => {
       setSubmitting(true);
       const quizData = {
         quizId: `quiz_${level.id}`,
-        module: 'qaida',
+        module: level.module || 'Qaida',
         levelId: level.id,
         questions: userAnswers,
         score: score + (selectedAnswer === quizQuestions[currentQuestion].correctAnswer ? 1 : 0),

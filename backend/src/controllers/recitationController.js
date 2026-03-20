@@ -25,7 +25,7 @@ const analyzeRecitation = async (req, res) => {
       });
     }
 
-    const { ground_truth, module, levelId, lessonId } = req.body;
+    const { ground_truth, module, levelId, lessonId, reference_audio_url } = req.body;
 
     if (!ground_truth || !module) {
       // Clean up uploaded file
@@ -56,6 +56,15 @@ const analyzeRecitation = async (req, res) => {
         contentType: req.file.mimetype || 'audio/wav'
       });
       formData.append('ground_truth', ground_truth);
+      formData.append('module', module);
+      if (reference_audio_url) {
+        formData.append('reference_audio_url', reference_audio_url);
+      }
+
+      // Extract lesson number for Qaida dynamic weighting
+      // levelId format: "qaida_level_4" or lessonId format: "character_3"
+      const lessonNum = extractLessonNumber(levelId, lessonId, module);
+      formData.append('lesson_number', String(lessonNum));
 
       const aiResponse = await axios.post(
         `${AI_BACKEND_URL}/analyze`,
@@ -86,9 +95,12 @@ const analyzeRecitation = async (req, res) => {
     }
 
     // Map AI results to our schema
-    const overallScore = Math.round(aiResult.accuracy_score || 0);
+    const overallScore = Math.round(aiResult.accuracy_score || aiResult.accuracyScore || 0);
     const pronunciationScore = Math.round(aiResult.pronunciation_score || 0);
-    const wordErrorRate = aiResult.word_error_rate || 0;
+    const aiWordErrorRateRaw = Number(aiResult.word_error_rate ?? aiResult.wordErrorRate ?? 0);
+    const wordErrorRate = Number.isNaN(aiWordErrorRateRaw)
+      ? 0
+      : (aiWordErrorRateRaw > 1 ? aiWordErrorRateRaw / 100 : aiWordErrorRateRaw);
 
     // Calculate tajweed score from tajweed_analysis
     let tajweedScore = 0;
@@ -120,11 +132,26 @@ const analyzeRecitation = async (req, res) => {
       tajweedScore = Math.round(aiResult.tajweed_analysis.overall_score || 0);
     }
 
-    // Calculate weighted overall: (Text×0.5) + (Pronunciation×0.3) + (Tajweed×0.2)
-    const textScore = Math.round(Math.max(0, 100 - (wordErrorRate * 100)));
-    const weightedOverall = Math.round(
-      (textScore * 0.5) + (pronunciationScore * 0.3) + (tajweedScore * 0.2)
-    );
+    // Dynamic weighting — must match the Python AI scoring formula
+    // Qaida Lessons 1-3: 100% pronunciation (isolated sounds)
+    // Qaida Lessons 4-6: 60% pronunciation + 40% tajweed (timing checks)
+    // Quran / Qaida 7+:  50% text + 30% pronunciation + 20% tajweed
+    const aiTextAccuracyRaw = Number(aiResult.accuracy_score ?? aiResult.accuracyScore);
+    const textScore = Number.isNaN(aiTextAccuracyRaw)
+      ? Math.round(Math.max(0, 100 - (wordErrorRate * 100)))
+      : Math.round(Math.max(0, Math.min(100, aiTextAccuracyRaw)));
+    const lessonNum = extractLessonNumber(levelId, lessonId, module);
+    let weightedOverall;
+
+    if (module === 'Qaida' && lessonNum >= 1 && lessonNum <= 3) {
+      weightedOverall = Math.round(pronunciationScore);
+    } else if (module === 'Qaida' && lessonNum >= 4 && lessonNum <= 6) {
+      weightedOverall = Math.round((pronunciationScore * 0.6) + (tajweedScore * 0.4));
+    } else {
+      weightedOverall = Math.round(
+        (textScore * 0.5) + (pronunciationScore * 0.3) + (tajweedScore * 0.2)
+      );
+    }
 
     // Map mistakes from AI
     const mistakes = [];
@@ -293,15 +320,52 @@ const getRecitationDetail = async (req, res) => {
 };
 
 // Helper functions
+
+/**
+ * Extract the Qaida lesson number from levelId or lessonId.
+ * Supports formats like: "qaida_level_4", "level_3", "4", "character_5"
+ */
+function extractLessonNumber(levelId, lessonId, module) {
+  if (module !== 'Qaida') return 0;
+
+  // Try extracting from levelId first (e.g., "qaida_level_4")
+  if (levelId) {
+    const match = levelId.match(/(\d+)/);
+    if (match) return parseInt(match[1], 10);
+  }
+
+  // Fallback: try lessonId
+  if (lessonId) {
+    const match = lessonId.match(/(\d+)/);
+    if (match) return parseInt(match[1], 10);
+  }
+
+  return 0;
+}
+
 function mapMistakeType(type) {
   const typeMap = {
+    // Text-based types (from Whisper text comparison)
     'missing': 'missing',
     'deletion': 'missing',
     'substitution': 'substitution',
     'replacement': 'substitution',
+    'mispronounced': 'substitution',    // Python AI sends this for text mismatches
     'insertion': 'insertion',
     'addition': 'insertion',
+    'extra': 'insertion',               // Python AI sends this for extra words
+    // Tajweed types (from Tajweed duration engine)
     'tajweed': 'tajweed',
+    'madd_short': 'tajweed',
+    'ghunnah_missing': 'tajweed',
+    'shaddah_short': 'tajweed',
+    'tafkheem_weak': 'tajweed',
+    'idgham_missing': 'tajweed',
+    'ikhfa_missing': 'tajweed',
+    'iqlab_missing': 'tajweed',
+    'izhar_missing': 'tajweed',
+    'qalqalah_missing': 'tajweed',
+    // Pure pronunciation
     'pronunciation': 'pronunciation'
   };
   return typeMap[type?.toLowerCase()] || 'pronunciation';

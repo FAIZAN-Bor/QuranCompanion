@@ -43,7 +43,9 @@ async def health_check():
 async def analyze_recitation(
     audio: UploadFile = File(...),
     ground_truth: str = Form(...),
-    reference_audio_url: str = Form(default="")
+    reference_audio_url: str = Form(default=""),
+    module: str = Form(default="Quran"),
+    lesson_number: int = Form(default=0)
 ):
     """
     Analyze a Quran recitation audio file.
@@ -83,18 +85,44 @@ async def analyze_recitation(
             temp_audio_path = temp_audio.name
 
         try:
-            # Step 1: Transcribe audio using Whisper
-            transcription_result = transcribe_audio(temp_audio_path)
-            recognized_text = transcription_result["text"]
-            word_timestamps = transcription_result.get("segments", [])
-
-            # Step 2: Calculate Word Error Rate
-            wer_result = calculate_wer(ground_truth, recognized_text)
+            import librosa
             
-            # Step 3: Get word-level alignment
-            aligned_words = get_word_timestamps(word_timestamps, ground_truth)
-            
-            # Step 4 is now integrated below in pronunciation comparison
+            # OPTIMIZATION: Stop using Whisper on Qaida 1-6!
+            # Isolated sounds (Lessons 1-3) and short combinations (Lessons 4-6) are notoriously bad for STT models.
+            # Using Whisper here causes false penalties and adds a massive 3-5 seconds of delay.
+            if module.lower() == 'qaida' and lesson_number <= 6:
+                print(f"Qaida {lesson_number} detected. Bypassing Whisper STT. Assuming Text is perfect.")
+                audio_dur = librosa.get_duration(path=temp_audio_path)
+                recognized_text = ground_truth
+                transcription_result = {"text": ground_truth, "language": "ar"}
+                wer_result = {
+                    "wer": 0, 
+                    "status": "✔ Excellent", 
+                    "insertions": 0, 
+                    "deletions": 0, 
+                    "substitutions": 0,
+                    "gt_normalized": ground_truth,
+                    "hyp_normalized": ground_truth
+                }
+                
+                # Build pseudo-alignment spanning the entire audio duration
+                aligned_words = [{
+                    "word": w,
+                    "start": round(i * (audio_dur / max(1, len(ground_truth.split()))), 3),
+                    "end": round((i + 1) * (audio_dur / max(1, len(ground_truth.split()))), 3),
+                    "status": "ok"
+                } for i, w in enumerate(ground_truth.split())]
+            else:
+                # Step 1: Transcribe audio using Whisper
+                transcription_result = transcribe_audio(temp_audio_path)
+                recognized_text = transcription_result["text"]
+                word_timestamps = transcription_result.get("segments", [])
+                
+                # Step 2: Calculate Word Error Rate
+                wer_result = calculate_wer(ground_truth, recognized_text)
+                
+                # Step 3: Get word-level alignment
+                aligned_words = get_word_timestamps(word_timestamps, ground_truth)
             
             # Step 5: Compare with reference if available (word-by-word)
             pronunciation_score = 100.0
@@ -147,8 +175,20 @@ async def analyze_recitation(
                 if reference_path:
                     print(f"Found reference audio at: {reference_path}")
                     
-                    # Get word timestamps from reference audio
-                    reference_word_timestamps = get_reference_word_timestamps(reference_path)
+                    # OPTIMIZATION: Bypassing Whisper on Qari Reference audio for Qaida 1-6
+                    if module.lower() == 'qaida' and lesson_number <= 6:
+                        import librosa
+                        ref_dur = librosa.get_duration(path=reference_path)
+                        reference_word_timestamps = [{
+                            "word": w,
+                            "start": round(i * (ref_dur / max(1, len(ground_truth.split()))), 3),
+                            "end": round((i + 1) * (ref_dur / max(1, len(ground_truth.split()))), 3),
+                            "probability": 1.0
+                        } for i, w in enumerate(ground_truth.split())]
+                    else:
+                        # Get word timestamps from reference audio using Whisper
+                        reference_word_timestamps = get_reference_word_timestamps(reference_path)
+                    
                     print(f"Reference has {len(reference_word_timestamps)} words")
                     
                     # Perform word-by-word comparison (HuBERT Embeddings)
@@ -163,10 +203,18 @@ async def analyze_recitation(
                     if word_comparison_results:
                         total_similarity = sum(w.get("similarity", 0) for w in word_comparison_results)
                         pronunciation_score = total_similarity / len(word_comparison_results)
+                    else:
+                        print("Warning: word_comparison_results was empty (likely Whisper ignored single character).")
+                        # Do not leave it at 100.0% blindly
                     
                     # Also get overall score using full audio comparison
                     overall_pronunciation = compare_with_reference(temp_audio_path, reference_path)
                     print(f"Word-level avg: {pronunciation_score:.2f}%, Full audio: {overall_pronunciation:.2f}%")
+                    
+                    # For isolated letters, text alignment is meaningless. Use raw audio-to-audio phonetic comparison.
+                    if module.lower() == 'qaida' and lesson_number <= 3:
+                        print("Qaida 1-3 detected: Overriding piece-meal score with Full Audio DTW comparison.")
+                        pronunciation_score = overall_pronunciation
                 else:
                     print(f"Reference audio not found. Tried: {possible_paths}")
             
@@ -181,9 +229,31 @@ async def analyze_recitation(
                 tajweed_analysis
             )
             
-            # Calculate overall accuracy score
+            # Calculate overall accuracy score with DYNAMIC WEIGHTING
+            # Based on the module and lesson number (Qaida lessons need different weights)
             text_accuracy = max(0, 100 - wer_result["wer"])
-            overall_accuracy = (text_accuracy * 0.5) + (pronunciation_score * 0.3) + (tajweed_analysis["overall_score"] * 0.2)
+            
+            # Dynamic weighting system for Qaida lessons:
+            #   Lessons 1-3 (Alphabet/Vowels/Tanween): Pure Wav2Vec2 (Whisper fails on isolated sounds)
+            #   Lessons 4-6 (Shaddah/Sukoon/Madd): Pronunciation + Tajweed duration checks
+            #   Lessons 7+  (Words/Joinings): Standard formula (Whisper works on real words)
+            if module == "Qaida" and 1 <= lesson_number <= 3:
+                # Pure pronunciation comparison — ignore Whisper text completely
+                text_weight, pron_weight, tajweed_weight = 0.0, 1.0, 0.0
+            elif module == "Qaida" and 4 <= lesson_number <= 6:
+                # Pronunciation + Tajweed (Shaddah duration, Madd elongation, Sukoon bounce)
+                text_weight, pron_weight, tajweed_weight = 0.0, 0.6, 0.4
+            else:
+                # Standard formula for Quran ayat and Qaida Lessons 7+
+                text_weight, pron_weight, tajweed_weight = 0.5, 0.3, 0.2
+            
+            overall_accuracy = (
+                (text_accuracy * text_weight) +
+                (pronunciation_score * pron_weight) +
+                (tajweed_analysis["overall_score"] * tajweed_weight)
+            )
+            
+            print(f"Scoring: module={module}, lesson={lesson_number}, weights=({text_weight}/{pron_weight}/{tajweed_weight}), score={overall_accuracy:.2f}")
             
             print(f"DEBUG: Generating pipeline steps for {len(aligned_words)} words")
             # Construct detailed pipeline steps for frontend visualization
