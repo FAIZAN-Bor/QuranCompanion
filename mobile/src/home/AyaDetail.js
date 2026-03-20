@@ -1,7 +1,8 @@
-import { StyleSheet, Text, View, Image, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, Image, TouchableOpacity, Alert, ActivityIndicator, ScrollView, Animated, Easing } from 'react-native';
 import React, { useState, useEffect, useRef } from 'react';
 import LinearGradient from 'react-native-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
+import Video from 'react-native-video';
 import progressService from '../services/progressService';
 import mistakeService from '../services/mistakeService';
 import { analyzeRecitation } from '../services/recitationService';
@@ -10,6 +11,8 @@ import useAudioRecorder from '../hooks/useAudioRecorder';
 const AyaDetail = ({ route }) => {
   const { data, surahId, surahName } = route.params;
   const navigation = useNavigation();
+  const currentArabic = data?.arabic || data?.arabicText || '';
+  const currentEnglish = data?.english || data?.translation || data?.transliteration || '';
   
   const {
     isRecording,
@@ -30,6 +33,31 @@ const AyaDetail = ({ route }) => {
   const [submitting, setSubmitting] = useState(false);
   const [practiceTime, setPracticeTime] = useState(0);
   const timerRef = useRef(null);
+  const cardPressAnim = useRef(new Animated.Value(1)).current;
+  const referencePlayerRef = useRef(null);
+  const [playReferenceAudio, setPlayReferenceAudio] = useState(false);
+  const [referenceAudioInstance, setReferenceAudioInstance] = useState(0);
+  const referenceAudioUrl = data?.audioUrl || data?.referenceAudioUrl || '';
+
+  const handlePlayReferenceAudio = () => {
+    if (!referenceAudioUrl) {
+      Alert.alert('Audio Not Available', 'Reference audio is not available for this ayah.');
+      return;
+    }
+
+    referencePlayerRef.current?.seek?.(0);
+    setReferenceAudioInstance((prev) => prev + 1);
+    setPlayReferenceAudio(true);
+  };
+
+  const animateCardPress = (toValue) => {
+    Animated.timing(cardPressAnim, {
+      toValue,
+      duration: 160,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  };
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -58,13 +86,14 @@ const AyaDetail = ({ route }) => {
 
     setAnalyzing(true);
     try {
-      const groundTruth = data.arabic || '';
+      const groundTruth = currentArabic;
       const result = await analyzeRecitation(
         audioPath,
         groundTruth,
         'Quran',
         surahId || `surah_${data.surahNumber || 1}`,
-        `ayah_${data.number}`
+        `ayah_${data.number}`,
+        referenceAudioUrl
       );
 
       if (result?.success && result.data) {
@@ -87,21 +116,25 @@ const AyaDetail = ({ route }) => {
     }
 
     const score = analysisResult.overallScore || 0;
+    const requiredThreshold = 70;
+    const canMarkDone = score >= requiredThreshold;
 
     setSubmitting(true);
     try {
-      await progressService.updateLessonProgress({
-        module: 'Quran',
-        levelId: surahId || `surah_${data.surahNumber || 1}`,
-        lessonId: `ayah_${data.number}`,
-        contentId: data._id || null,
-        status: 'completed',
-        completionPercentage: 100,
-        timeSpent: practiceTime,
-        accuracy: score
-      });
+      if (canMarkDone) {
+        await progressService.updateLessonProgress({
+          module: 'Quran',
+          levelId: surahId || `surah_${data.surahNumber || 1}`,
+          lessonId: `ayah_${data.number}`,
+          contentId: data._id || null,
+          status: 'completed',
+          completionPercentage: 100,
+          timeSpent: practiceTime,
+          accuracy: score
+        });
+      }
 
-      if (score < 80) {
+      if (!canMarkDone) {
         await mistakeService.logMistake({
           module: 'Quran',
           levelId: surahId || `surah_${data.surahNumber || 1}`,
@@ -118,6 +151,8 @@ const AyaDetail = ({ route }) => {
       navigation.navigate('RecitationResult', {
         result: analysisResult,
         module: 'Quran',
+        requiredThreshold,
+        canMarkDone,
         title: surahName || 'Quran Practice',
         subtitle: `Ayah ${data.number}`,
       });
@@ -152,10 +187,41 @@ const AyaDetail = ({ route }) => {
           style={styles.mainContainer}
         >
           {/* Quran Header Card */}
-          <View style={styles.topCard}>
-            <Text style={styles.arabicHeader}>{data.arabic}</Text>
-            <Text style={styles.translationHeader}>{data.english}</Text>
-          </View>
+          <Animated.View style={{ transform: [{ scale: cardPressAnim }] }}>
+            <View style={styles.topCard}>
+              <TouchableOpacity
+                style={styles.cardTapArea}
+                activeOpacity={0.9}
+                onPress={handlePlayReferenceAudio}
+                onPressIn={() => animateCardPress(0.98)}
+                onPressOut={() => animateCardPress(1)}
+              >
+                <Text style={styles.arabicHeader}>{currentArabic}</Text>
+                <Text style={styles.translationHeader}>{currentEnglish}</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+
+          {referenceAudioUrl ? (
+            <Video
+              key={`${referenceAudioUrl}_${referenceAudioInstance}`}
+              ref={referencePlayerRef}
+              source={{ uri: referenceAudioUrl }}
+              audioOnly
+              controls={false}
+              paused={!playReferenceAudio}
+              ignoreSilentSwitch="ignore"
+              playInBackground={false}
+              onEnd={() => {
+                setPlayReferenceAudio(false);
+              }}
+              onError={() => {
+                setPlayReferenceAudio(false);
+                Alert.alert('Playback Error', 'Could not play reference audio.');
+              }}
+              style={styles.hiddenAudioPlayer}
+            />
+          ) : null}
 
           {/* AI Feedback Section */}
           <View style={styles.feedbackContainer}>
@@ -294,7 +360,7 @@ const AyaDetail = ({ route }) => {
                 {(submitting || analyzing) ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.smallBtnText}>{hasResult ? 'Done' : 'Check'}</Text>
+                  <Text style={styles.smallBtnText}>{hasResult ? 'Result' : 'Check'}</Text>
                 )}
               </LinearGradient>
             </TouchableOpacity>
@@ -353,7 +419,10 @@ const styles = StyleSheet.create({
     marginBottom: 25,
     elevation: 5,
   },
-
+  cardTapArea: {
+    width: '100%',
+    alignItems: 'center',
+  },
   arabicHeader: {
     fontSize: 28,
     color: '#2b624c',
@@ -562,6 +631,9 @@ const styles = StyleSheet.create({
     height: 60,
     tintColor: '#FFFFFF',
   },
-
+  hiddenAudioPlayer: {
+    width: 0,
+    height: 0,
+  },
 });
 

@@ -1,14 +1,15 @@
-import { StyleSheet, Text, View, Image, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, Image, TouchableOpacity, Alert, ActivityIndicator, ScrollView, Animated, Easing } from 'react-native';
 import React, { useState, useEffect, useRef } from 'react';
 import LinearGradient from 'react-native-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
+import Video from 'react-native-video';
 import progressService from '../services/progressService';
 import mistakeService from '../services/mistakeService';
 import { analyzeRecitation } from '../services/recitationService';
 import useAudioRecorder from '../hooks/useAudioRecorder';
 
 const QuidaDetail = ({ route }) => {
-  const { data, levelId } = route.params;
+  const { data, levelId, takhtiNumber } = route.params;
   const navigation = useNavigation();
   
   const {
@@ -30,6 +31,62 @@ const QuidaDetail = ({ route }) => {
   const [submitting, setSubmitting] = useState(false);
   const [practiceTime, setPracticeTime] = useState(0);
   const timerRef = useRef(null);
+  const cardPressAnim = useRef(new Animated.Value(1)).current;
+  const referencePlayerRef = useRef(null);
+  const [playReferenceAudio, setPlayReferenceAudio] = useState(false);
+  const [referenceAudioInstance, setReferenceAudioInstance] = useState(0);
+
+  const normalizeArabicText = (value) => {
+    if (typeof value !== 'string') return '';
+    return value
+      .normalize('NFC')
+      .replace(/\u200E|\u200F|\u061C/g, '')
+      .replace(/\u0651\u0650/g, '\u0650\u0651')
+      .replace(/\u0651\u064F/g, '\u064F\u0651')
+      .replace(/\u0651\u064E/g, '\u064E\u0651')
+      .replace(/\u0651\u064D/g, '\u064D\u0651')
+      .replace(/\u0651\u064C/g, '\u064C\u0651')
+      .replace(/\u0651\u064B/g, '\u064B\u0651');
+  };
+
+  const currentArabicText = normalizeArabicText(data?.item?.arabicText || data?.item?.arabic || data?.arabicText || data?.arabic || '');
+  const currentMeaningText = data?.item?.english || data?.item?.transliteration || data?.english || data?.transliteration || '';
+  const referenceAudioUrl = data?.item?.audioUrl || data?.audioUrl || '';
+  const parseLessonFromLevelId = (value) => {
+    const m = `${value || ''}`.match(/(\d+)/);
+    return m ? Number(m[1]) : null;
+  };
+  const lessonNumber = Number(takhtiNumber)
+    || Number(data?.levelNumber)
+    || Number(data?.lessonNumber)
+    || parseLessonFromLevelId(levelId)
+    || 1;
+
+  const getQaidaThreshold = (lessonNo) => {
+    if (lessonNo >= 1 && lessonNo <= 3) return 80;
+    if (lessonNo >= 4 && lessonNo <= 6) return 70;
+    return 70;
+  };
+
+  const handlePlayReferenceAudio = () => {
+    if (!referenceAudioUrl) {
+      Alert.alert('Audio Not Available', 'Reference audio is not available for this word.');
+      return;
+    }
+
+    referencePlayerRef.current?.seek?.(0);
+    setReferenceAudioInstance((prev) => prev + 1);
+    setPlayReferenceAudio(true);
+  };
+
+  const animateCardPress = (toValue) => {
+    Animated.timing(cardPressAnim, {
+      toValue,
+      duration: 160,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  };
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -59,13 +116,15 @@ const QuidaDetail = ({ route }) => {
 
     setAnalyzing(true);
     try {
-      const groundTruth = data.item?.arabic || data.arabic || '';
+      const groundTruth = currentArabicText;
+      const qaidaLevelId = levelId || `qaida_level_${data.levelNumber || data.lessonNumber || 1}`;
       const result = await analyzeRecitation(
         audioPath,
         groundTruth,
         'Qaida',
-        levelId || `qaida_level_${data.levelNumber || 1}`,
-        `character_${data.number}`
+        qaidaLevelId,
+        `character_${data.number}`,
+        referenceAudioUrl
       );
 
       if (result?.success && result.data) {
@@ -88,29 +147,33 @@ const QuidaDetail = ({ route }) => {
     }
 
     const score = analysisResult.overallScore || 0;
+    const requiredThreshold = getQaidaThreshold(lessonNumber);
+    const canMarkDone = score >= requiredThreshold;
 
     setSubmitting(true);
     try {
-      await progressService.updateLessonProgress({
-        module: 'Qaida',
-        levelId: levelId || `qaida_level_${data.levelNumber || 1}`,
-        lessonId: `character_${data.number}`,
-        contentId: data._id || null,
-        status: 'completed',
-        completionPercentage: 100,
-        timeSpent: practiceTime,
-        accuracy: score
-      });
+      if (canMarkDone) {
+        await progressService.updateLessonProgress({
+          module: 'Qaida',
+          levelId: levelId || `qaida_level_${lessonNumber}`,
+          lessonId: `character_${data.number}`,
+          contentId: data._id || null,
+          status: 'completed',
+          completionPercentage: 100,
+          timeSpent: practiceTime,
+          accuracy: score
+        });
+      }
 
-      if (score < 80) {
+      if (!canMarkDone) {
         await mistakeService.logMistake({
           module: 'Qaida',
-          levelId: levelId || `qaida_level_${data.levelNumber || 1}`,
+          levelId: levelId || `qaida_level_${lessonNumber}`,
           lessonId: `character_${data.number}`,
           contentId: data._id || null,
           mistakeType: 'pronunciation',
-          title: `${data.item?.arabic || 'Character'} Pronunciation`,
-          description: `Pronunciation accuracy was ${score}% for "${data.item?.english || 'character'}". Needs practice.`,
+          title: `${currentArabicText || 'Character'} Pronunciation`,
+          description: `Pronunciation accuracy was ${score}% for "${currentMeaningText || 'character'}". Needs practice.`,
           severity: score < 60 ? 'major' : 'moderate'
         });
       }
@@ -119,8 +182,11 @@ const QuidaDetail = ({ route }) => {
       navigation.navigate('RecitationResult', {
         result: analysisResult,
         module: 'Qaida',
-        title: data.item?.arabic || 'Qaida Practice',
-        subtitle: data.item?.english || '',
+        lessonNumber,
+        requiredThreshold,
+        canMarkDone,
+        title: currentArabicText || 'Qaida Practice',
+        subtitle: currentMeaningText || '',
       });
     } catch (error) {
       console.error('Submit error:', error);
@@ -152,15 +218,46 @@ const QuidaDetail = ({ route }) => {
           style={styles.mainContainer}
         >
           {/* Arabic Character Card */}
-          <LinearGradient
-            colors={['#FFF9C4', '#FFF59D']}
-            style={styles.topCard}
-            start={{x: 0, y: 0}}
-            end={{x: 1, y: 1}}
-          >
-            <Text style={styles.arabicHeader}>{data.item.arabic}</Text>
-            <Text style={styles.translationHeader}>{data.item.english}</Text>
-          </LinearGradient>
+          <Animated.View style={{ transform: [{ scale: cardPressAnim }] }}>
+            <LinearGradient
+              colors={['#FFF9C4', '#FFF59D']}
+              style={styles.topCard}
+              start={{x: 0, y: 0}}
+              end={{x: 1, y: 1}}
+            >
+              <TouchableOpacity
+                style={styles.cardTapArea}
+                activeOpacity={0.9}
+                onPress={handlePlayReferenceAudio}
+                onPressIn={() => animateCardPress(0.98)}
+                onPressOut={() => animateCardPress(1)}
+              >
+                <Text style={styles.arabicHeader}>{currentArabicText || '...'}</Text>
+                <Text style={styles.translationHeader}>{currentMeaningText}</Text>
+              </TouchableOpacity>
+            </LinearGradient>
+          </Animated.View>
+
+          {referenceAudioUrl ? (
+            <Video
+              key={`${referenceAudioUrl}_${referenceAudioInstance}`}
+              ref={referencePlayerRef}
+              source={{ uri: referenceAudioUrl }}
+              audioOnly
+              controls={false}
+              paused={!playReferenceAudio}
+              ignoreSilentSwitch="ignore"
+              playInBackground={false}
+              onEnd={() => {
+                setPlayReferenceAudio(false);
+              }}
+              onError={() => {
+                setPlayReferenceAudio(false);
+                Alert.alert('Playback Error', 'Could not play reference audio.');
+              }}
+              style={styles.hiddenAudioPlayer}
+            />
+          ) : null}
 
           {/* Score / Feedback Section */}
           <View style={styles.feedbackContainer}>
@@ -185,34 +282,51 @@ const QuidaDetail = ({ route }) => {
                     backgroundColor: score >= 80 ? '#0A7D4F' : score >= 60 ? '#FFA726' : '#E53935'
                   }]} />
                 </View>
-                {/* Mini score breakdown */}
+                {/* Mini score breakdown — only show relevant scores */}
                 <View style={styles.scoreBreakdown}>
-                  <View style={styles.scoreItem}>
-                    <Text style={styles.scoreItemLabel}>Text</Text>
-                    <Text style={styles.scoreItemValue}>{analysisResult.accuracyScore || 0}%</Text>
-                  </View>
+                  {lessonNumber >= 7 && (
+                    <View style={styles.scoreItem}>
+                      <Text style={styles.scoreItemLabel}>Text</Text>
+                      <Text style={styles.scoreItemValue}>{analysisResult.accuracyScore || 0}%</Text>
+                    </View>
+                  )}
                   <View style={styles.scoreItem}>
                     <Text style={styles.scoreItemLabel}>Pronunciation</Text>
                     <Text style={styles.scoreItemValue}>{analysisResult.pronunciationScore || 0}%</Text>
                   </View>
-                  <View style={styles.scoreItem}>
-                    <Text style={styles.scoreItemLabel}>Tajweed</Text>
-                    <Text style={styles.scoreItemValue}>{analysisResult.tajweedScore || 0}%</Text>
-                  </View>
+                  {lessonNumber >= 4 && (
+                    <View style={styles.scoreItem}>
+                      <Text style={styles.scoreItemLabel}>Tajweed</Text>
+                      <Text style={styles.scoreItemValue}>{analysisResult.tajweedScore || 0}%</Text>
+                    </View>
+                  )}
                 </View>
-                {/* Mistakes summary */}
-                {analysisResult.mistakes?.length > 0 && (
-                  <View style={styles.mistakesSummary}>
-                    <Text style={styles.mistakesTitle}>
-                      {analysisResult.mistakes.length} mistake{analysisResult.mistakes.length > 1 ? 's' : ''} found
-                    </Text>
-                    {analysisResult.mistakes.slice(0, 2).map((m, i) => (
-                      <Text key={i} style={styles.mistakeItem}>
-                        • {m.suggestion || `${m.type}: "${m.word}"`}
+                {/* Mistakes summary — filter out irrelevant mistakes for early Qaida lessons */}
+                {(() => {
+                  const allMistakes = analysisResult.mistakes || [];
+                  // Text-based types from Whisper (irrelevant for isolated sounds)
+                  const TEXT_TYPES = ['missing', 'substitution', 'insertion', 'mispronounced', 'extra', 'deletion'];
+                  const relevantMistakes = allMistakes.filter(m => {
+                    const type = (m.type || '').toLowerCase();
+                    // Lessons 1-3: Exclude ALL text + tajweed mistakes (only pure pronunciation)
+                    if (lessonNumber <= 3) return !TEXT_TYPES.includes(type) && type !== 'tajweed';
+                    // Lessons 4-6: Exclude text mistakes (keep pronunciation + tajweed)
+                    if (lessonNumber <= 6) return !TEXT_TYPES.includes(type);
+                    return true;
+                  });
+                  return relevantMistakes.length > 0 ? (
+                    <View style={styles.mistakesSummary}>
+                      <Text style={styles.mistakesTitle}>
+                        {relevantMistakes.length} mistake{relevantMistakes.length > 1 ? 's' : ''} found
                       </Text>
-                    ))}
-                  </View>
-                )}
+                      {relevantMistakes.slice(0, 2).map((m, i) => (
+                        <Text key={i} style={styles.mistakeItem}>
+                          • {m.suggestion || `${m.type}: "${m.word}"`}
+                        </Text>
+                      ))}
+                    </View>
+                  ) : null;
+                })()}
               </View>
             ) : (
               <Text style={styles.scoreText}>
@@ -289,7 +403,7 @@ const QuidaDetail = ({ route }) => {
                 {(submitting || analyzing) ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.smallBtnText}>{hasResult ? 'Done' : 'Check'}</Text>
+                  <Text style={styles.smallBtnText}>{hasResult ? 'Result' : 'Check'}</Text>
                 )}
               </LinearGradient>
             </TouchableOpacity>
@@ -303,18 +417,14 @@ const QuidaDetail = ({ route }) => {
 
 export default QuidaDetail;
 
-
 const styles = StyleSheet.create({
-
   screen: {
     flex: 1,
   },
-
   scrollContent: {
     padding: 20,
     paddingBottom: 40,
   },
-
   screenTitle: {
     fontSize: 28,
     fontWeight: '900',
@@ -324,7 +434,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginTop: 10,
   },
-
   screenSubtitle: {
     fontSize: 16,
     fontWeight: '700',
@@ -332,7 +441,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
-
   mainContainer: {
     borderRadius: 30,
     paddingVertical: 30,
@@ -343,10 +451,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     shadowRadius: 10,
   },
-
-  // -----------------
-  // TOP CARD
-  // -----------------
   topCard: {
     padding: 25,
     borderRadius: 20,
@@ -358,25 +462,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 6,
   },
-
+  cardTapArea: {
+    width: '100%',
+    alignItems: 'center',
+  },
   arabicHeader: {
     fontSize: 40,
     color: '#D84315',
     textAlign: 'center',
-    marginBottom: 15,
+    marginBottom: 12,
     fontWeight: '900',
+    flexShrink: 1,
+    writingDirection: 'rtl',
   },
-
   translationHeader: {
     fontSize: 15,
     color: '#666',
     textAlign: 'center',
     fontWeight: '600',
   },
-
-  // -----------------
-  // FEEDBACK SECTION
-  // -----------------
   feedbackContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
@@ -389,7 +493,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
   },
-
   feedbackTitle: {
     fontSize: 16,
     fontWeight: '800',
@@ -397,7 +500,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textAlign: 'center',
   },
-
   scoreText: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -405,7 +507,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 10,
   },
-
   feedbackBar: {
     height: 12,
     width: '100%',
@@ -413,14 +514,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: 'center',
   },
-
   progressFill: {
     height: 12,
     backgroundColor: '#0A7D4F',
     borderRadius: 10,
   },
-
-  // ECG SECTION
   ecg: {
     width: '100%',
     height: 80,
@@ -428,12 +526,10 @@ const styles = StyleSheet.create({
     tintColor: '#0A7D4F',
     opacity: 0.7,
   },
-
   ecgActive: {
     tintColor: '#E53935',
     opacity: 1,
   },
-
   timerText: {
     fontSize: 14,
     color: '#666',
@@ -441,23 +537,21 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     fontWeight: '600',
   },
-
   recordingText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
     marginTop: 5,
   },
-
-  // -----------------
-  // ACTION BUTTONS
-  // -----------------
+  hiddenAudioPlayer: {
+    width: 0,
+    height: 0,
+  },
   actionsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-
   smallButton: {
     width: 80,
     height: 45,
@@ -466,7 +560,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     elevation: 5,
   },
-
   audioButton: {
     width: 90,
     height: 45,
@@ -477,15 +570,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 5,
   },
-
   smallBtnText: {
     fontSize: 14,
     color: '#fff',
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-
-  // BIG MIC BUTTON
   bigMic: {
     width: 130,
     height: 130,
@@ -498,32 +588,26 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 10,
   },
-
   bigMicIcon: {
     width: 60,
     height: 60,
     tintColor: '#FFFFFF',
   },
-
-  // Analysis States
   analyzingContainer: {
     alignItems: 'center',
     paddingVertical: 15,
   },
-
   analyzingText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#0A7D4F',
     marginTop: 12,
   },
-
   analyzingSubtext: {
     fontSize: 13,
     color: '#999',
     marginTop: 4,
   },
-
   scoreBreakdown: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -532,44 +616,37 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E8F5E9',
   },
-
   scoreItem: {
     alignItems: 'center',
   },
-
   scoreItemLabel: {
     fontSize: 12,
     color: '#999',
     fontWeight: '600',
   },
-
   scoreItemValue: {
     fontSize: 16,
     fontWeight: '800',
     color: '#333',
     marginTop: 2,
   },
-
   mistakesSummary: {
     marginTop: 12,
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#E8F5E9',
   },
-
   mistakesTitle: {
     fontSize: 13,
     fontWeight: '700',
     color: '#E53935',
     marginBottom: 6,
   },
-
   mistakeItem: {
     fontSize: 12,
     color: '#666',
     marginBottom: 3,
     lineHeight: 18,
   },
-
 });
 

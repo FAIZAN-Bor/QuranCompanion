@@ -16,9 +16,17 @@ import MistakeCard from '../component/MistakeCard';
 const { width } = Dimensions.get('window');
 
 const RecitationResult = ({ route, navigation }) => {
-  const { result, module, title, subtitle } = route.params;
+  const { result, module, title, subtitle, lessonNumber = 0, requiredThreshold = 70, canMarkDone } = route.params;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+
+  const pickScore = (...values) => {
+    for (const value of values) {
+      const n = Number(value);
+      if (!Number.isNaN(n)) return n;
+    }
+    return 0;
+  };
 
   useEffect(() => {
     Animated.parallel([
@@ -43,14 +51,29 @@ const RecitationResult = ({ route, navigation }) => {
     return { grade: 'Needs Work', emoji: '💪', color: '#E53935' };
   };
 
-  const overallScore = result?.overallScore ?? 0;
+  const overallScore = pickScore(result?.overallScore, result?.overall_score);
+  const accuracyScore = pickScore(result?.accuracyScore, result?.accuracy_score, result?.textAccuracy, result?.text_accuracy);
+  const pronunciationScore = pickScore(result?.pronunciationScore, result?.pronunciation_score);
+  const tajweedScore = pickScore(result?.tajweedScore, result?.tajweed_score);
+  const canFinish = typeof canMarkDone === 'boolean' ? canMarkDone : overallScore >= requiredThreshold;
   const gradeInfo = getGradeInfo(overallScore);
 
-  const subScores = [
-    { label: 'Text Accuracy', score: result?.accuracyScore ?? 0, icon: '📝' },
-    { label: 'Pronunciation', score: result?.pronunciationScore ?? 0, icon: '🗣️' },
-    { label: 'Tajweed', score: result?.tajweedScore ?? 0, icon: '📖' },
-  ];
+  // Build sub-scores dynamically based on module & lesson
+  // Qaida 1-3: Only Pronunciation
+  // Qaida 4-6: Pronunciation + Tajweed
+  // Qaida 7+ / Quran: All three
+  const isQaida = module === 'Qaida';
+  const showText = !isQaida || lessonNumber >= 7;
+  const showTajweed = !isQaida || lessonNumber >= 4;
+
+  const subScores = [];
+  if (showText) {
+    subScores.push({ label: 'Text Accuracy', score: accuracyScore, icon: '📝' });
+  }
+  subScores.push({ label: 'Pronunciation', score: pronunciationScore, icon: '🗣️' });
+  if (showTajweed) {
+    subScores.push({ label: 'Tajweed', score: tajweedScore, icon: '📖' });
+  }
 
   const getScoreColor = (s) => {
     if (s >= 80) return '#0A7D4F';
@@ -111,8 +134,8 @@ const RecitationResult = ({ route, navigation }) => {
           ))}
         </View>
 
-        {/* Text Comparison */}
-        {(result?.recognizedText || result?.groundTruth) && (
+        {/* Text Comparison — hidden for Qaida Lessons 1-6 */}
+        {showText && (result?.recognizedText || result?.groundTruth) && (
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Text Comparison</Text>
             <View style={styles.comparisonBox}>
@@ -122,7 +145,7 @@ const RecitationResult = ({ route, navigation }) => {
               </View>
               <View style={styles.divider} />
               <View style={styles.compItem}>
-                <Text style={[styles.compLabel, { color: getScoreColor(result.accuracyScore) }]}>
+                <Text style={[styles.compLabel, { color: getScoreColor(accuracyScore) }]}>
                   Recognized
                 </Text>
                 <Text style={[styles.compArabic, { color: '#333' }]}>
@@ -138,8 +161,8 @@ const RecitationResult = ({ route, navigation }) => {
           </View>
         )}
 
-        {/* Tajweed Rules */}
-        {result?.tajweedAnalysis && result.tajweedAnalysis.length > 0 && (
+        {/* Tajweed Rules — hidden for Qaida Lessons 1-3 */}
+        {showTajweed && result?.tajweedAnalysis && result.tajweedAnalysis.length > 0 && (
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Tajweed Rules</Text>
             <Text style={styles.sectionSubtitle}>
@@ -151,34 +174,55 @@ const RecitationResult = ({ route, navigation }) => {
           </View>
         )}
 
-        {/* Mistakes */}
-        {result?.mistakes && result.mistakes.length > 0 && (
-          <View style={styles.sectionCard}>
-            <View style={styles.mistakeHeader}>
-              <Text style={styles.sectionTitle}>Mistakes Found</Text>
-              <View style={styles.mistakeCountBadge}>
-                <Text style={styles.mistakeCountText}>{result.mistakes.length}</Text>
-              </View>
-            </View>
-            <Text style={styles.sectionSubtitle}>
-              Review and practice these areas to improve
-            </Text>
-            {result.mistakes.map((mistake, idx) => (
-              <MistakeCard key={idx} mistake={mistake} index={idx} />
-            ))}
-          </View>
-        )}
+        {/* Mistakes — filtered based on lesson relevance */}
+        {(() => {
+          const allMistakes = result?.mistakes || [];
+          // Text-based types from Whisper (irrelevant for isolated sounds in Qaida)
+          const TEXT_TYPES = ['missing', 'substitution', 'insertion', 'mispronounced', 'extra', 'deletion'];
+          const relevantMistakes = allMistakes.filter(m => {
+            if (!isQaida) return true;
+            const type = (m.type || '').toLowerCase();
+            // Lessons 1-3: Exclude ALL text + tajweed mistakes
+            if (lessonNumber <= 3) return !TEXT_TYPES.includes(type) && type !== 'tajweed';
+            // Lessons 4-6: Exclude text mistakes (keep pronunciation + tajweed)
+            if (lessonNumber <= 6) return !TEXT_TYPES.includes(type);
+            return true;
+          });
 
-        {/* No Mistakes Message */}
-        {(!result?.mistakes || result.mistakes.length === 0) && overallScore >= 80 && (
-          <View style={styles.successCard}>
-            <Text style={styles.successEmoji}>🎉</Text>
-            <Text style={styles.successTitle}>No mistakes found!</Text>
-            <Text style={styles.successSubtitle}>
-              Your recitation was accurate. Keep up the great work!
-            </Text>
-          </View>
-        )}
+          if (relevantMistakes.length > 0) {
+            return (
+              <View style={styles.sectionCard}>
+                <View style={styles.mistakeHeader}>
+                  <Text style={styles.sectionTitle}>Mistakes Found</Text>
+                  <View style={styles.mistakeCountBadge}>
+                    <Text style={styles.mistakeCountText}>{relevantMistakes.length}</Text>
+                  </View>
+                </View>
+                <Text style={styles.sectionSubtitle}>
+                  Review and practice these areas to improve
+                </Text>
+                {relevantMistakes.map((mistake, idx) => (
+                  <MistakeCard key={idx} mistake={mistake} index={idx} />
+                ))}
+              </View>
+            );
+          }
+
+          // No relevant mistakes & good score → show success
+          if (overallScore >= 80) {
+            return (
+              <View style={styles.successCard}>
+                <Text style={styles.successEmoji}>🎉</Text>
+                <Text style={styles.successTitle}>No mistakes found!</Text>
+                <Text style={styles.successSubtitle}>
+                  Your recitation was accurate. Keep up the great work!
+                </Text>
+              </View>
+            );
+          }
+
+          return null;
+        })()}
 
         {/* Action Buttons */}
         <View style={styles.actionsContainer}>
@@ -189,19 +233,26 @@ const RecitationResult = ({ route, navigation }) => {
             <Text style={styles.retryButtonText}>Practice Again</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.doneButton}
+            style={[styles.doneButton, !canFinish && styles.doneButtonDisabled]}
+            disabled={!canFinish}
             onPress={() => {
-              // Go back to the module list
-              if (module === 'Qaida') {
-                navigation.navigate('QuidaTaqkti');
-              } else if (module === 'Quran') {
-                navigation.navigate('AllAya');
-              } else {
-                navigation.navigate('BottomTabNavigator');
+              // Safety check: pop(2) removes the Result screen AND the Detail screen,
+              // dropping the user exactly back to whatever sequence list they started from
+              // (e.g., QuidaTaqkti, AllAya, or MistakePractice)
+              if (navigation.pop) {
+                try {
+                  navigation.pop(2);
+                  return;
+                } catch (e) {
+                  console.warn('Could not pop 2 screens, falling back');
+                }
               }
+              
+              // Fallback if pop is unavailable
+              navigation.navigate('BottomTabNavigator');
             }}
           >
-            <Text style={styles.doneButtonText}>Done</Text>
+            <Text style={styles.doneButtonText}>{canFinish ? 'Done' : `Need ${requiredThreshold}%`}</Text>
           </TouchableOpacity>
         </View>
 
@@ -433,6 +484,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 15,
     alignItems: 'center',
+  },
+  doneButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+    opacity: 0.7,
   },
   doneButtonText: {
     fontSize: 15,

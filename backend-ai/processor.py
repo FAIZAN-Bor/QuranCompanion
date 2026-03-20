@@ -204,6 +204,11 @@ def compare_with_reference(user_audio_path: str, reference_audio_path: str) -> f
         user_y, user_sr = librosa.load(user_audio_path, sr=16000)
         ref_y, ref_sr = librosa.load(reference_audio_path, sr=16000)
 
+        # Trim leading and trailing silence (critical for isolated Qaida characters)
+        # top_db=20 means any sound 20dB below peak is considered silence
+        user_y, _ = librosa.effects.trim(user_y, top_db=20)
+        ref_y, _ = librosa.effects.trim(ref_y, top_db=20)
+
         user_emb = extract_neural_embeddings(user_y, user_sr)
         reference_emb = extract_neural_embeddings(ref_y, ref_sr)
 
