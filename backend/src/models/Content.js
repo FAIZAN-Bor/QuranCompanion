@@ -35,7 +35,7 @@ const contentSchema = new mongoose.Schema({
     type: Number,
     default: null
   },
-  
+
   // For Qaida
   lesson: {
     type: String,
@@ -43,17 +43,21 @@ const contentSchema = new mongoose.Schema({
     // Lesson content/description
   },
   characters: [{
-    arabic: String,
-    english: String
+    arabicText: String,
+    audioUrl: String,
+    transliteration: String,
+    translation: String,
+    imageUrl: String,
+    difficulty: String
   }],
-  
+
   // For Dua
   category: {
     type: String,
     default: null
     // 'Morning', 'Evening', 'Eating', 'Sleeping', etc.
   },
-  
+
   // Common fields
   arabicText: {
     type: String,
@@ -119,11 +123,11 @@ contentSchema.index({ tags: 1 });
 contentSchema.index({ difficulty: 1 });
 
 // Static method to get content by type
-contentSchema.statics.getByType = async function(type, filters = {}) {
-  return await this.find({ 
-    type, 
+contentSchema.statics.getByType = async function (type, filters = {}) {
+  return await this.find({
+    type,
     isActive: true,
-    ...filters 
+    ...filters
   }).sort({ order: 1, number: 1 });
 };
 

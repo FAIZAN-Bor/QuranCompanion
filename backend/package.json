@@ -6,7 +6,15 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "jest"
+    "test": "jest",
+    "seed:quran": "node src/scripts/seedQuranContent.js",
+    "seed:qaida1": "node src/scripts/seedQaidaTakhti1.js",
+    "seed:qaida2": "node src/scripts/seedQaidaTakhti2.js",
+    "seed:qaida3": "node src/scripts/seedQaidaTakhti3.js",
+    "seed:qaida4": "node src/scripts/seedQaidaTakhti4.js",
+    "seed:qaida5": "node src/scripts/seedQaidaTakhti5.js",
+    "seed:qaida6": "node src/scripts/seedQaidaTakhti6.js",
+    "seed:qaida7": "node src/scripts/seedQaidaTakhti7.js"
   },
   "keywords": [
     "quran",
