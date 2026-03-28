@@ -58,3 +58,14 @@ build/
 # React Native / Metro
 .metro-health-check*
 *.jsbundle
+
+# Python / AI specific
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+
+# Ignored Folders
+audio-analysis/
+Audio_Data_Architecture_Guide.md

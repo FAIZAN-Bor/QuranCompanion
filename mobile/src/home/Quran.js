@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import React, { useState, useEffect } from 'react';
 import LinearGradient from 'react-native-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
 import contentService from '../services/contentService';
 
 const Quran = ({ route, navigation }) => {
@@ -11,6 +12,12 @@ const Quran = ({ route, navigation }) => {
   useEffect(() => {
     fetchQuran();
   }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchQuran();
+    }, [])
+  );
 
   const fetchQuran = async () => {
     try {

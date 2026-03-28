@@ -81,7 +81,7 @@ const QuizScreen = ({ route, navigation }) => {
       setSubmitting(true);
       const quizData = {
         quizId: `quiz_${level.id}`,
-        module: 'qaida',
+        module: level.module || 'Qaida',
         levelId: level.id,
         questions: userAnswers,
         score: score + (selectedAnswer === quizQuestions[currentQuestion].correctAnswer ? 1 : 0),
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: '#E8F5E9',
     marginBottom: 12,
   },
   optionSelected: {

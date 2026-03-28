@@ -457,7 +457,7 @@ const ParentProfile = ({ navigation }) => {
               value={editName}
               onChangeText={setEditName}
               placeholder="Enter your name"
-              placeholderTextColor="#999"
+              placeholderTextColor="#6C8A7A"
             />
 
             <Text style={styles.inputLabel}>Email</Text>
@@ -466,7 +466,7 @@ const ParentProfile = ({ navigation }) => {
               value={editEmail}
               onChangeText={setEditEmail}
               placeholder="Enter your email"
-              placeholderTextColor="#999"
+              placeholderTextColor="#6C8A7A"
               keyboardType="email-address"
               autoCapitalize="none"
             />
@@ -515,7 +515,7 @@ const ParentProfile = ({ navigation }) => {
               value={childEmail}
               onChangeText={setChildEmail}
               placeholder="child@example.com"
-              placeholderTextColor="#999"
+              placeholderTextColor="#6C8A7A"
               keyboardType="email-address"
               autoCapitalize="none"
             />

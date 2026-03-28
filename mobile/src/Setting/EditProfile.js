@@ -83,10 +83,18 @@ const EditProfile = () => {
       <View style={styles.profileHeader}>
                 <TouchableOpacity onPress={handleImagePicker} activeOpacity={0.7}>
                   <View style={styles.imageWrapper}>
-                    <Image
-                      style={styles.profileImage}
-                      source={profileImage ? { uri: profileImage } : require("../assests/profile.jpeg")}
-                    />
+                    {profileImage ? (
+                      <Image
+                        style={styles.profileImage}
+                        source={{ uri: profileImage }}
+                      />
+                    ) : (
+                      <View style={[styles.profileImage, styles.initialsContainer]}>
+                        <Text style={styles.initialsText}>
+                          {user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U'}
+                        </Text>
+                      </View>
+                    )}
                     <View style={styles.editIconContainer}>
                       <Text style={styles.editIconText}>✏️</Text>
                     </View>
@@ -172,12 +180,14 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 2,
-    borderColor: "#E0E0E0",
-    backgroundColor: '#FFFFFF',
+    borderColor: "#E8F5E9",
+    backgroundColor: '#FAFAFA',
     borderRadius: 15,
     padding: 15,
     marginBottom: 15,
     fontSize: 16,
+    color: '#0A7D4F',
+    fontWeight: '600',
     elevation: 3,
   },
   profileHeader: {
@@ -207,6 +217,16 @@ const styles = StyleSheet.create({
     height: 130,
     resizeMode: "cover",
     borderRadius: 65,
+  },
+  initialsContainer: {
+    backgroundColor: '#0A7D4F',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  initialsText: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   editIconContainer: {
     position: 'absolute',

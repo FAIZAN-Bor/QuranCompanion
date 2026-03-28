@@ -222,7 +222,15 @@ const Home = ({ navigation }) => {
             activeOpacity={0.7}
           >
             <View style={styles.profileImageContainer}>
-              <Image source={user?.profileImage ? { uri: user.profileImage } : require('../assests/profile.jpeg')} style={styles.profileImage} />
+              {user?.profileImage ? (
+                <Image source={{ uri: user.profileImage }} style={styles.profileImage} />
+              ) : (
+                <View style={[styles.profileImage, styles.initialsContainer]}>
+                  <Text style={styles.initialsText}>
+                    {user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : 'U'}
+                  </Text>
+                </View>
+              )}
             </View>
             <View style={styles.profileText}>
               <Text style={styles.profileName}>{user?.name || 'User'}</Text>
@@ -581,6 +589,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   profileImage: { width: screenWidth * 0.15, height: screenWidth * 0.15, borderRadius: screenWidth * 0.075 },
+  initialsContainer: {
+    backgroundColor: '#0A7D4F',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  initialsText: {
+    fontSize: screenWidth * 0.055,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
   profileText: { flexDirection: 'column', flexShrink: 1 },
   profileName: { fontSize: screenWidth * 0.045, fontWeight: '800', color: '#FFFFFF', marginBottom: 4 },
   profileEmail: { fontSize: screenWidth * 0.032, color: '#E0F2F1', fontWeight: '500' },

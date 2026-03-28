@@ -140,9 +140,12 @@ const validationRules = {
 
   // Reset password validation
   resetPassword: [
-    body('resetToken')
-      .notEmpty()
-      .withMessage('Reset token is required'),
+    body('email')
+      .isEmail()
+      .withMessage('Valid email is required'),
+    body('otp')
+      .isLength({ min: 4, max: 4 })
+      .withMessage('OTP must be 4 digits'),
     body('newPassword')
       .isLength({ min: 6 })
       .withMessage('Password must be at least 6 characters')

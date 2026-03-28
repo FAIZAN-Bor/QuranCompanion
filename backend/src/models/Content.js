@@ -43,12 +43,17 @@ const contentSchema = new mongoose.Schema({
     // Lesson content/description
   },
   characters: [{
+    arabic: String,
     arabicText: String,
-    audioUrl: String,
+    english: String,
     transliteration: String,
     translation: String,
+    audioUrl: String,
     imageUrl: String,
-    difficulty: String
+    difficulty: {
+      type: String,
+      default: 'beginner'
+    }
   }],
 
   // For Dua

@@ -15,13 +15,26 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
-import { progressMapLevels, calculateOverallProgress } from '../assests/data/progressMapData';
+import contentService from '../services/contentService';
 import progressService from '../services/progressService';
 
 const { width: screenWidth } = Dimensions.get('window');
 
+const QAIDA_LEVEL_RANGE = [1, 2, 3, 4, 5, 6, 7];
+const QAIDA_LEVEL_COLORS = ['#0A7D4F', '#0F9D63', '#15B872', '#62B26F', '#7ECB8A', '#9BA3AF', '#34B36E'];
+const QURAN_LEVEL_COLORS = ['#14532D', '#166534', '#15803D', '#16A34A', '#22C55E', '#4ADE80', '#86EFAC'];
+const QURAN_LEVELS = [
+  { levelNumber: 1, title: 'Opening & Essentials', surahNumbers: [1, 112, 108, 103] },
+  { levelNumber: 2, title: 'Daily Reflection I', surahNumbers: [107, 105, 106, 111] },
+  { levelNumber: 3, title: 'Daily Reflection II', surahNumbers: [113, 114, 110, 109] },
+  { levelNumber: 4, title: 'Accountability & Time', surahNumbers: [104, 102, 97, 98] },
+  { levelNumber: 5, title: 'Power & Awakening', surahNumbers: [99, 100, 101, 96] },
+  { levelNumber: 6, title: 'Character Building I', surahNumbers: [90, 91, 92] },
+  { levelNumber: 7, title: 'Character Building II', surahNumbers: [93, 94, 95] },
+];
+
 const ProgressMap = ({ navigation }) => {
-  const [levels, setLevels] = useState(progressMapLevels);
+  const [levels, setLevels] = useState([]);
   const [overallProgress, setOverallProgress] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -35,36 +48,160 @@ const ProgressMap = ({ navigation }) => {
   const fetchProgress = async () => {
     try {
       setLoading(true);
-      const response = await progressService.getProgress({
-        module: 'qaida'
-      });
-      
-      // Update levels with backend data
-      if (response.data && response.data.length > 0) {
-        const updatedLevels = levels.map(level => {
-          const progressData = response.data.find(p => p.levelId === level.id);
-          if (progressData) {
-            return {
-              ...level,
-              status: progressData.status,
-              progress: progressData.completionPercentage || level.progress
-            };
-          }
-          return level;
-        });
-        setLevels(updatedLevels);
-        
-        // Calculate overall progress
-        const totalProgress = updatedLevels.reduce((sum, level) => sum + (level.progress || 0), 0);
-        setOverallProgress(Math.round(totalProgress / updatedLevels.length));
-      } else {
-        // Use mock data calculation
-        setOverallProgress(calculateOverallProgress());
+
+      // Fetch each source individually so one failure doesn't crash everything
+      let qaidaContent = [];
+      let quranContent = [];
+      let qaidaProgressRecords = [];
+      let quranProgressRecords = [];
+
+      try {
+        const qaidaRes = await contentService.getQaidaLessons();
+        qaidaContent = qaidaRes?.data?.content || [];
+      } catch (e) {
+        console.warn('Qaida content fetch failed:', e?.message || e);
       }
+
+      try {
+        const quranRes = await contentService.getQuranSurahs();
+        quranContent = quranRes?.data?.content || [];
+      } catch (e) {
+        console.warn('Quran content fetch failed:', e?.message || e);
+      }
+
+      try {
+        const qaidaProgRes = await progressService.getProgress({ module: 'Qaida' });
+        qaidaProgressRecords = qaidaProgRes?.data?.progress || [];
+      } catch (e) {
+        console.warn('Qaida progress fetch failed:', e?.message || e);
+      }
+
+      try {
+        const quranProgRes = await progressService.getProgress({ module: 'Quran' });
+        quranProgressRecords = quranProgRes?.data?.progress || [];
+      } catch (e) {
+        console.warn('Quran progress fetch failed:', e?.message || e);
+      }
+
+      const contentByNumber = new Map();
+      qaidaContent.forEach((item) => {
+        const number = Number(item?.number);
+        if (!Number.isNaN(number)) {
+          contentByNumber.set(number, item);
+        }
+      });
+
+      const qaidaProgressByLevel = new Map();
+      qaidaProgressRecords.forEach((record) => {
+        if (!record?.levelId) return;
+        const current = qaidaProgressByLevel.get(record.levelId);
+        if (!current || (record.completionPercentage || 0) > (current.completionPercentage || 0)) {
+          qaidaProgressByLevel.set(record.levelId, record);
+        }
+      });
+
+      const quranProgressByLevel = new Map();
+      quranProgressRecords.forEach((record) => {
+        if (!record?.levelId) return;
+        const current = quranProgressByLevel.get(record.levelId);
+        if (!current || (record.completionPercentage || 0) > (current.completionPercentage || 0)) {
+          quranProgressByLevel.set(record.levelId, record);
+        }
+      });
+
+      const mappedQaidaLevels = QAIDA_LEVEL_RANGE.map((levelNumber, index) => {
+        const levelId = `qaida_${levelNumber}`;
+        const content = contentByNumber.get(levelNumber);
+        const progress = qaidaProgressByLevel.get(levelId);
+        const isMissingTakhti = levelNumber === 6 && !content;
+
+        const progressPercent = isMissingTakhti
+          ? 0
+          : Math.max(0, Math.min(100, Number(progress?.completionPercentage || 0)));
+        const completed = progressPercent >= 100 || progress?.status === 'completed';
+
+        return {
+          id: levelId,
+          module: 'Qaida',
+          levelNumber,
+          title: content?.name || `Takhti ${levelNumber}`,
+          subtitle: isMissingTakhti
+            ? 'Coming soon'
+            : (content?.lesson || 'Tap to start practice'),
+          icon: 'qaida',
+          color: QAIDA_LEVEL_COLORS[index],
+          status: isMissingTakhti ? 'locked' : (completed ? 'completed' : 'unlocked'),
+          lessons: content
+            ? [
+                {
+                  id: content._id || `${levelId}_lesson_1`,
+                  title: content.name,
+                  completed,
+                  content,
+                },
+              ]
+            : [],
+          quizRequired: !!content,
+          progress: progressPercent,
+        };
+      });
+
+      const quranByNumber = new Map();
+      quranContent.forEach((surah) => {
+        const number = Number(surah?.number);
+        if (!Number.isNaN(number)) {
+          quranByNumber.set(number, surah);
+        }
+      });
+
+      const mappedQuranLevels = QURAN_LEVELS.map((config, index) => {
+        const levelId = `quran_${config.levelNumber}`;
+        const progress = quranProgressByLevel.get(levelId);
+        const surahs = config.surahNumbers
+          .map((number) => quranByNumber.get(number))
+          .filter(Boolean);
+
+        const progressPercent = Math.max(0, Math.min(100, Number(progress?.completionPercentage || 0)));
+        const completed = progressPercent >= 100 || progress?.status === 'completed';
+
+        return {
+          id: levelId,
+          module: 'Quran',
+          levelNumber: config.levelNumber,
+          title: config.title,
+          subtitle: surahs.length
+            ? `${surahs.map((s) => s.name).join(' • ')}`
+            : 'Content syncing from database',
+          icon: 'quran',
+          color: QURAN_LEVEL_COLORS[index],
+          status: surahs.length ? (completed ? 'completed' : 'unlocked') : 'locked',
+          lessons: surahs.map((surah) => ({
+            id: surah._id || `quran_${surah.number}`,
+            title: `${surah.name} (${surah.number})`,
+            completed,
+            content: surah,
+          })),
+          quizRequired: surahs.length > 0,
+          progress: progressPercent,
+        };
+      });
+
+      const mappedLevels = [...mappedQaidaLevels, ...mappedQuranLevels];
+
+      setLevels(mappedLevels);
+
+      const progressEligibleLevels = mappedLevels.filter((level) => level.status !== 'locked');
+      const progressSum = progressEligibleLevels.reduce((sum, level) => sum + (level.progress || 0), 0);
+      setOverallProgress(
+        progressEligibleLevels.length
+          ? Math.round(progressSum / progressEligibleLevels.length)
+          : 0
+      );
     } catch (error) {
       console.error('Progress fetch error:', error);
-      // Fallback to local data
-      setOverallProgress(calculateOverallProgress());
+      Alert.alert('Error', 'Failed to load progress map from server.');
+      setLevels([]);
+      setOverallProgress(0);
     } finally {
       setLoading(false);
     }
@@ -290,8 +427,8 @@ const ProgressMap = ({ navigation }) => {
 
   // Badge nodes data
   const badges = [
-    { id: 'badge1', afterLevel: 2, title: 'Alphabet Master', description: 'Mastered Arabic Letters!' },
-    { id: 'badge2', afterLevel: 5, title: 'Quran Beginner', description: 'Started Quran Journey!' },
+    { id: 'badge1', module: 'Qaida', afterLevel: 2, title: 'Alphabet Master', description: 'Mastered Arabic Letters!' },
+    { id: 'badge-mid', module: 'Qaida', afterLevel: 4, title: 'Takhti 4 Badge', description: 'Completed key Qaida milestone!' },
   ];
 
   return (
@@ -357,25 +494,22 @@ const ProgressMap = ({ navigation }) => {
             const elements = [renderLevelNode(level, index)];
             
             // Add badge after certain levels
-            const badge = badges.find(b => b.afterLevel === level.levelNumber);
+            const badge = badges.find((b) => b.afterLevel === level.levelNumber && b.module === level.module);
             if (badge) {
               elements.push(renderBadgeNode(badge, index));
             }
 
-            // Add celebration after Qaida completion (level 4)
-            if (level.levelNumber === 4 && level.module === 'Qaida') {
+            // Show Qaida completion and Quran transition at the end of Takhti 7.
+            if (level.module === 'Qaida' && level.levelNumber === 7) {
               elements.push(
                 <View key={`celebration-qaida`}>
                   {renderCelebrationNode('qaida', 'Qaida Mastered! 🎊', 'You have completed all Qaida lessons')}
                 </View>
               );
-            }
 
-            // Add celebration after Quran completion (level 4 of Quran)
-            if (level.levelNumber === 4 && level.module === 'Quran') {
               elements.push(
                 <View key={`celebration-quran`}>
-                  {renderCelebrationNode('quran', 'Quran Journey Complete! 🌟', 'Congratulations on completing all levels')}
+                  {renderCelebrationNode('quran', 'Quran Journey Starts! 📖', 'Quran lessons and quizzes are shown below this milestone')}
                 </View>
               );
             }
@@ -441,7 +575,7 @@ const styles = StyleSheet.create({
     opacity: 0.3,
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '900',
     color: '#0A7D4F',
     textAlign: 'center',
@@ -552,15 +686,15 @@ const styles = StyleSheet.create({
   },
   pathWrapper: {
     position: 'absolute',
-    top: -40,
+    top: -34,
     width: '100%',
-    height: 80,
+    height: 72,
   },
   pathLine: {
     position: 'absolute',
     top: 0,
     width: 6,
-    height: 40,
+    height: 36,
     overflow: 'hidden',
     borderRadius: 3,
   },
@@ -569,10 +703,10 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   pathLineRight: {
-    right: screenWidth * 0.25,
+    right: '26%',
   },
   pathLineLeft: {
-    left: screenWidth * 0.25,
+    left: '26%',
   },
   pathLineCenter: {
     width: 6,
@@ -583,8 +717,8 @@ const styles = StyleSheet.create({
   },
   pathCurve: {
     position: 'absolute',
-    top: 35,
-    width: screenWidth * 0.3,
+    top: 31,
+    width: '24%',
     height: 40,
     overflow: 'hidden',
   },
@@ -598,13 +732,13 @@ const styles = StyleSheet.create({
     borderColor: '#FFD700',
   },
   curveRight: {
-    right: screenWidth * 0.25 - 3,
+    right: '26%',
     borderTopWidth: 0,
     borderLeftWidth: 0,
     borderBottomRightRadius: 60,
   },
   curveLeft: {
-    left: screenWidth * 0.25 - 3,
+    left: '26%',
     borderTopWidth: 0,
     borderRightWidth: 0,
     borderBottomLeftRadius: 60,
@@ -785,8 +919,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -20,
     width: 4,
-    height: 25,
+    height: 30,
     backgroundColor: '#C4B5FD',
+    borderRadius: 2,
   },
   quizNodeWrapper: {
     flexDirection: 'row',

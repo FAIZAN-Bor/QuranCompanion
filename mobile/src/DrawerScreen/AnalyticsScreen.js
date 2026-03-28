@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
     color: '#0A7D4F',
     fontWeight: '600',
   },
-  title: { fontSize: 30, fontWeight: "900", color: "#0A7D4F", textAlign: "center", marginTop: 10, letterSpacing: 0.5 },
+  title: { fontSize: 28, fontWeight: "900", color: "#0A7D4F", textAlign: "center", marginTop: 10, letterSpacing: 0.5 },
   subtitle: { fontSize: 14, color: "#666", textAlign: "center", marginBottom: 20, fontWeight: '600' },
 
   cardsContainer: { flexDirection: "row", marginBottom: 25 },

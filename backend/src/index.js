@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
@@ -14,6 +15,7 @@ const mistakeRoutes = require('./routes/mistakes');
 const parentRoutes = require('./routes/parent');
 const notificationRoutes = require('./routes/notifications');
 const achievementRoutes = require('./routes/achievements');
+const recitationRoutes = require('./routes/recitation');
 
 // Initialize express app
 const app = express();
@@ -28,6 +30,9 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve uploaded files (recitation audio)
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Request logging middleware (development)
 if (process.env.NODE_ENV === 'development') {
@@ -57,6 +62,7 @@ app.use('/api/mistakes', mistakeRoutes);
 app.use('/api/parent', parentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/achievements', achievementRoutes);
+app.use('/api/recitation', recitationRoutes);
 
 // 404 handler
 app.use((req, res, next) => {

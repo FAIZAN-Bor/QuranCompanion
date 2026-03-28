@@ -8,6 +8,7 @@ import SignUp from './auth/SignUp';
 import Login from './auth/Login';
 import Otp from './auth/Otp';
 import ForgetPassword from './auth/forgetPassword';
+import ResetPassword from './auth/ResetPassword';
 import LearnerSurvey from './auth/LearnerSurvey';
 
 import DuaLearn from './home/DuaLearn';  
@@ -28,6 +29,7 @@ import ChangPasswordScreen from './Setting/ChangePasswordScreen';
 import EditProfile from './Setting/EditProfile';
 import ParentNavigator from './parent/ParentNavigator';
 import MistakePractice from './DrawerScreen/MistakePractice';
+import RecitationResult from './home/RecitationResult';
 
 
 const Stack = createNativeStackNavigator();
@@ -43,7 +45,8 @@ const navigation = () => {
          <Stack.Screen name="Login" component={Login} /> 
             <Stack.Screen name="Otp" component={Otp} /> 
             <Stack.Screen name="LearnerSurvey" component={LearnerSurvey} />
-            <Stack.Screen name="ForgetPassword" component={ForgetPassword} /> 
+            <Stack.Screen name="ForgetPassword" component={ForgetPassword} />
+            <Stack.Screen name="ResetPassword" component={ResetPassword} /> 
                 <Stack.Screen name="DuaLearn" component={DuaLearn}  options={{title:'Dua Screen',headerShown: true ,headerTintColor:'#2b624c'}}/> 
                 <Stack.Screen name="DuaDetail" component={DuaDetail}  options={{title:'Dua Detail',headerShown: true ,headerTintColor:'#2b624c'}}/> 
                 <Stack.Screen name="Quran" component={Quran}options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}} /> 
@@ -64,6 +67,9 @@ const navigation = () => {
       
       {/* Mistake Practice Screen */}
       <Stack.Screen name="MistakePractice" component={MistakePractice} options={{title:'Practice Mistake',headerShown: true ,headerTintColor:'#2b624c'}}/>
+      
+      {/* Recitation Result Screen */}
+      <Stack.Screen name="RecitationResult" component={RecitationResult} options={{title:'Recitation Result',headerShown: true ,headerTintColor:'#2b624c'}}/>
       
       {/* Parent Screens */}
       <Stack.Screen name="ParentNavigator" component={ParentNavigator} />

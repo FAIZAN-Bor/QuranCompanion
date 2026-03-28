@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Image } from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import ParentDashboard from './ParentDashboard';
 import ChildProgressOverview from './ChildProgressOverview';
 import ActivityTimeline from './ActivityTimeline';
@@ -14,9 +15,9 @@ const ParentBottomTabNavigator = () => {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: '#0A7D4F',
-        tabBarInactiveTintColor: 'gray',
-        tabBarStyle: { 
-          paddingVertical: 5, 
+        tabBarInactiveTintColor: '#9E9E9E',
+        tabBarStyle: {
+          paddingVertical: 5,
           height: 60,
           backgroundColor: '#FFFFFF',
           borderTopWidth: 1,
@@ -30,56 +31,52 @@ const ParentBottomTabNavigator = () => {
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: '600',
-          marginBottom: 5,
         },
       }}
     >
-      <Tab.Screen 
-        name="Dashboard" 
+      <Tab.Screen
+        name="Dashboard"
         component={ParentDashboard}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <Image 
-              source={require('../assests/home.png')} 
-              style={{ width: size, height: size, tintColor: color }} 
+            <Image
+              source={require('../assests/home.png')}
+              style={{ width: size, height: size, tintColor: color }}
             />
-          )
+          ),
         }}
       />
-      <Tab.Screen 
-        name="Progress" 
+      <Tab.Screen
+        name="Progress"
         component={ChildProgressOverview}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <Image 
-              source={require('../assests/analysis.png')} 
-              style={{ width: size, height: size, tintColor: color }} 
+            <Image
+              source={require('../assests/analysis.png')}
+              style={{ width: size, height: size, tintColor: color }}
             />
-          )
+          ),
         }}
       />
-      <Tab.Screen 
-        name="Activity" 
+      <Tab.Screen
+        name="Activity"
         component={ActivityTimeline}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <Image 
-              source={require('../assests/mistake.png')} 
-              style={{ width: size, height: size, tintColor: color }} 
+            <Image
+              source={require('../assests/analysis.png')}
+              style={{ width: size, height: size, tintColor: color }}
             />
-          )
+          ),
         }}
       />
-      <Tab.Screen 
-        name="Profile" 
+      <Tab.Screen
+        name="Profile"
         component={ParentProfile}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <Image 
-              source={require('../assests/settings.png')} 
-              style={{ width: size, height: size, tintColor: color }} 
-            />
-          )
+            <Ionicons name="person" size={size} color={color} />
+          ),
         }}
       />
     </Tab.Navigator>

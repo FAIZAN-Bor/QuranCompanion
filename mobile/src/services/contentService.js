@@ -42,7 +42,7 @@ class ContentService {
   // Get content by number (Surah number, Qaida lesson number)
   async getContentByNumber(type, number) {
     try {
-      const response = await api.get(`/content/${type}/${number}`);
+      const response = await api.get(`/content/${type}/number/${number}`);
       return response.data;
     } catch (error) {
       throw this.handleError(error);
