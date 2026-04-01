@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import quizService from '../services/quizService';
+import { useEffect } from 'react';
 
 const QuizScreen = ({ route, navigation }) => {
   const { level } = route.params;
@@ -22,28 +23,37 @@ const QuizScreen = ({ route, navigation }) => {
   const [showResult, setShowResult] = useState(false);
   const [userAnswers, setUserAnswers] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [quizQuestions, setQuizQuestions] = useState([]);
+  const [fetchError, setFetchError] = useState(null);
 
-  // Sample quiz questions (you can expand this with real data)
-  const quizQuestions = [
-    {
-      id: 1,
-      question: `What did you learn in ${level.title}?`,
-      options: ['Option A', 'Option B', 'Option C', 'Option D'],
-      correctAnswer: 0
-    },
-    {
-      id: 2,
-      question: 'Which concept is most important in this level?',
-      options: ['Concept 1', 'Concept 2', 'Concept 3', 'Concept 4'],
-      correctAnswer: 1
-    },
-    {
-      id: 3,
-      question: 'How many lessons did you complete?',
-      options: [`${level.lessons.length} lessons`, 'None', 'All', 'Some'],
-      correctAnswer: 0
+  useEffect(() => {
+    fetchQuizQuestions();
+  }, [level.id]);
+
+  const fetchQuizQuestions = async () => {
+    try {
+      setLoading(true);
+      setFetchError(null);
+      console.log(`[Quiz] Fetching questions for level: ${level.id}`);
+      const res = await quizService.getQuestions(level.id);
+      
+      if (res?.success && res?.data?.questions?.length > 0) {
+        console.log(`[Quiz] Successfully fetched ${res.data.questions.length} questions`);
+        setQuizQuestions(res.data.questions);
+      } else {
+        const msg = res?.message || 'No questions found for this level in the database.';
+        setFetchError(msg);
+        console.log(`[Quiz] Fetch failed: ${msg}`);
+      }
+    } catch (error) {
+      const errorMsg = error.message || 'Failed to connect to browser storage or server.';
+      setFetchError(`Network Error: ${errorMsg}`);
+      console.error('[Quiz] Error fetching quiz questions:', error);
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
 
   const handleAnswerSelect = (index) => {
     setSelectedAnswer(index);
@@ -59,7 +69,7 @@ const QuizScreen = ({ route, navigation }) => {
     
     // Store answer
     setUserAnswers([...userAnswers, {
-      questionId: quizQuestions[currentQuestion].id,
+      questionId: quizQuestions[currentQuestion]._id || currentQuestion,
       userAnswer: selectedAnswer,
       isCorrect
     }]);
@@ -86,14 +96,15 @@ const QuizScreen = ({ route, navigation }) => {
         questions: userAnswers,
         score: score + (selectedAnswer === quizQuestions[currentQuestion].correctAnswer ? 1 : 0),
         totalQuestions: quizQuestions.length,
-        timeSpent: 0 // You can track time if needed
+        timeSpent: 0
       };
       
+      console.log('[Quiz] Submitting quiz data:', quizData);
       await quizService.submitQuiz(quizData);
       setShowResult(true);
     } catch (error) {
-      console.error('Quiz submission error:', error);
-      Alert.alert('Error', 'Failed to submit quiz. Showing results anyway.');
+      console.error('[Quiz] Quiz submission error:', error);
+      Alert.alert('Error', 'Failed to submit quiz statistics. Showing results anyway.');
       setShowResult(true);
     } finally {
       setSubmitting(false);
@@ -135,6 +146,55 @@ const QuizScreen = ({ route, navigation }) => {
       );
     }
   };
+
+  if (loading) {
+    return (
+      <LinearGradient colors={['#E8F5E9', '#F1F8E9', '#FFF9C4']} style={styles.wrapper}>
+        <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="large" color="#0A7D4F" />
+          <Text style={{ marginTop: 10, color: '#0A7D4F', fontWeight: 'bold' }}>Loading Quiz Content...</Text>
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <LinearGradient colors={['#E8F5E9', '#F1F8E9', '#FFF9C4']} style={styles.wrapper}>
+        <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+          <Text style={{ fontSize: 32, marginBottom: 15 }}>🔎</Text>
+          <Text style={{ fontSize: 18, color: '#DC2626', fontWeight: 'bold', textAlign: 'center' }}>
+            {fetchError}
+          </Text>
+          <Text style={{ fontSize: 13, color: '#666', marginTop: 15, textAlign: 'center', lineHeight: 20 }}>
+            Make sure the quiz data for "{level.id}" is seeded in the database.
+          </Text>
+          <TouchableOpacity 
+            onPress={fetchQuizQuestions} 
+            style={{ marginTop: 30, backgroundColor: '#0A7D4F', paddingHorizontal: 30, paddingVertical: 14, borderRadius: 12 }}
+          >
+            <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Retry Fetch</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 20 }}>
+            <Text style={{ color: '#666', fontWeight: '600' }}>Go Back</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
+  if (quizQuestions.length === 0) {
+    return (
+      <LinearGradient colors={['#E8F5E9', '#F1F8E9', '#FFF9C4']} style={styles.wrapper}>
+        <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+          <Text style={{ fontSize: 18, color: '#0A7D4F', fontWeight: 'bold', textAlign: 'center' }}>No questions available for this level yet.</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 20 }}>
+            <Text style={{ color: '#0A7D4F', fontWeight: 'bold' }}>Go Back</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
 
   if (showResult) {
     const percentage = (score / quizQuestions.length) * 100;

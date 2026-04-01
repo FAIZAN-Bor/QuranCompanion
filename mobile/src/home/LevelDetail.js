@@ -12,14 +12,45 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
+import progressService from '../services/progressService';
 
 const LevelDetail = ({ route, navigation }) => {
   const { level } = route.params;
   const lessons = level.lessons || [];
+  const [completing, setCompleting] = React.useState(false);
 
   const completedCount = lessons.filter(l => l.completed).length;
   const totalCount = lessons.length;
   const allCompleted = totalCount > 0 && completedCount === totalCount;
+
+  const handleCompleteLevel = async () => {
+    try {
+      setCompleting(true);
+      const uncompletedLessons = lessons.filter(l => !l.completed);
+      
+      for (const lesson of uncompletedLessons) {
+        await progressService.updateLessonProgress({
+          module: level.module,
+          levelId: level.id,
+          lessonId: lesson.id,
+          contentId: lesson.content?._id || null,
+          status: 'completed',
+          completionPercentage: 100,
+          accuracy: 100,
+          timeSpent: 60
+        });
+      }
+      
+      Alert.alert('Lessons Completed!', 'Lessons have been marked as complete. The quiz is now unlocked.\n\nPlease go back and refresh the Progress Map to see updates.', [
+        { text: 'OK', onPress: () => navigation.goBack() }
+      ]);
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Error', 'Failed to auto-complete lessons.');
+    } finally {
+      setCompleting(false);
+    }
+  };
 
   const handleLessonPress = (lesson) => {
     // Navigate to appropriate lesson screen based on module
@@ -144,6 +175,31 @@ const LevelDetail = ({ route, navigation }) => {
                 >
                   <Image source={require('../assests/quiz.png')} style={styles.quizIcon} />
                   <Text style={styles.quizButtonText}>{allCompleted ? 'Start Quiz' : 'Complete Lessons First'}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Dev Shortcut Button */}
+          {!allCompleted && (
+            <View style={styles.devButtonContainer}>
+              <Text style={styles.devShortcutTitle}>Skip Lessons?</Text>
+              <Text style={styles.devShortcutDesc}>For testing purposes, you can automatically mark all these lessons as completed to unlock the Quiz instantly.</Text>
+              <TouchableOpacity 
+                activeOpacity={0.8}
+                onPress={handleCompleteLevel}
+                disabled={completing}
+              >
+                <LinearGradient
+                  colors={completing ? ['#9CA3AF', '#6B7280'] : ['#F59E0B', '#F97316', '#EA580C']}
+                  style={styles.devButtonGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Text style={styles.devButtonEmoji}>{completing ? '⏳' : '⚡'}</Text>
+                  <Text style={styles.devButtonText}>
+                    {completing ? 'Fast Forwarding...' : 'Complete All Lessons'}
+                  </Text>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
@@ -346,6 +402,50 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 16,
     fontWeight: '800',
+  },
+  devButtonContainer: {
+    marginTop: 30,
+    marginBottom: 40,
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    elevation: 3,
+    shadowColor: '#EA580C',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+  },
+  devShortcutTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#EA580C',
+    marginBottom: 6,
+  },
+  devShortcutDesc: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  devButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    elevation: 4,
+  },
+  devButtonEmoji: {
+    fontSize: 20,
+    marginRight: 8,
+  },
+  devButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });
 

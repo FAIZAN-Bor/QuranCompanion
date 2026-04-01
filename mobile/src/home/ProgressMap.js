@@ -43,7 +43,14 @@ const ProgressMap = ({ navigation }) => {
   useEffect(() => {
     fetchProgress();
     startPulseAnimation();
-  }, []);
+
+    // Add listener to refresh data when screen comes into focus
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchProgress();
+    });
+
+    return unsubscribe;
+  }, [navigation]);
 
   const fetchProgress = async () => {
     try {
@@ -109,6 +116,8 @@ const ProgressMap = ({ navigation }) => {
         }
       });
 
+      let previousQaidaCompleted = true; // Level 1 is unlocked by default
+
       const mappedQaidaLevels = QAIDA_LEVEL_RANGE.map((levelNumber, index) => {
         const levelId = `qaida_${levelNumber}`;
         const content = contentByNumber.get(levelNumber);
@@ -119,6 +128,12 @@ const ProgressMap = ({ navigation }) => {
           ? 0
           : Math.max(0, Math.min(100, Number(progress?.completionPercentage || 0)));
         const completed = progressPercent >= 100 || progress?.status === 'completed';
+        
+        const isUnlocked = previousQaidaCompleted && !isMissingTakhti;
+        const finalStatus = isUnlocked ? (completed ? 'completed' : 'unlocked') : 'locked';
+        
+        // Update previous completed state for the next level
+        previousQaidaCompleted = completed;
 
         return {
           id: levelId,
@@ -130,7 +145,7 @@ const ProgressMap = ({ navigation }) => {
             : (content?.lesson || 'Tap to start practice'),
           icon: 'qaida',
           color: QAIDA_LEVEL_COLORS[index],
-          status: isMissingTakhti ? 'locked' : (completed ? 'completed' : 'unlocked'),
+          status: finalStatus,
           lessons: content
             ? [
                 {
@@ -154,6 +169,8 @@ const ProgressMap = ({ navigation }) => {
         }
       });
 
+      let previousQuranCompleted = true; // Level 1 Quran is unlocked by default
+
       const mappedQuranLevels = QURAN_LEVELS.map((config, index) => {
         const levelId = `quran_${config.levelNumber}`;
         const progress = quranProgressByLevel.get(levelId);
@@ -163,6 +180,11 @@ const ProgressMap = ({ navigation }) => {
 
         const progressPercent = Math.max(0, Math.min(100, Number(progress?.completionPercentage || 0)));
         const completed = progressPercent >= 100 || progress?.status === 'completed';
+        
+        const isUnlocked = previousQuranCompleted && surahs.length > 0;
+        const finalStatus = isUnlocked ? (completed ? 'completed' : 'unlocked') : 'locked';
+        
+        previousQuranCompleted = completed;
 
         return {
           id: levelId,
@@ -174,7 +196,7 @@ const ProgressMap = ({ navigation }) => {
             : 'Content syncing from database',
           icon: 'quran',
           color: QURAN_LEVEL_COLORS[index],
-          status: surahs.length ? (completed ? 'completed' : 'unlocked') : 'locked',
+          status: finalStatus,
           lessons: surahs.map((surah) => ({
             id: surah._id || `quran_${surah.number}`,
             title: `${surah.name} (${surah.number})`,
@@ -232,12 +254,17 @@ const ProgressMap = ({ navigation }) => {
 
   const handleLevelPress = (level) => {
     if (level.status === 'locked') {
+      Alert.alert('Locked', 'Please complete the previous levels to unlock this one!');
       return;
     }
     navigation.navigate('LevelDetail', { level });
   };
 
   const handleQuizPress = (level) => {
+    if (level.status !== 'completed') {
+      Alert.alert('Locked', 'Please complete the lessons for this level to unlock the quiz!');
+      return;
+    }
     navigation.navigate('QuizScreen', { level });
   };
 
@@ -323,6 +350,7 @@ const ProgressMap = ({ navigation }) => {
   const renderQuizNode = (level, index) => {
     const isEven = index % 2 === 0;
     const quizCompleted = level.quizCompleted || false;
+    const isLocked = level.status !== 'completed';
 
     return (
       <View style={styles.quizNodeContainer}>
@@ -332,29 +360,29 @@ const ProgressMap = ({ navigation }) => {
         <View style={[styles.quizNodeWrapper, isEven ? styles.nodeRight : styles.nodeLeft]}>
           <TouchableOpacity
             onPress={() => handleQuizPress(level)}
-            activeOpacity={0.8}
+            activeOpacity={isLocked ? 1 : 0.8}
             style={styles.quizTouchable}
           >
             <LinearGradient
-              colors={quizCompleted ? ['#FFD700', '#FFA500'] : ['#8B5CF6', '#6366F1']}
+              colors={isLocked ? ['#D1D5DB', '#9CA3AF'] : quizCompleted ? ['#FFD700', '#FFA500'] : ['#8B5CF6', '#6366F1']}
               style={styles.quizNode}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
-              <Image source={require('../assests/quiz.png')} style={styles.quizIcon} />
+              <Image source={isLocked ? require('../assests/settings.png') : require('../assests/quiz.png')} style={[styles.quizIcon, isLocked && { width: 20, height: 20, tintColor: '#FFF' }]} />
               {quizCompleted && <Text style={styles.quizCheck}>✓</Text>}
             </LinearGradient>
           </TouchableOpacity>
           
           <View style={[styles.quizLabel, isEven ? styles.quizLabelRight : styles.quizLabelLeft]}>
-            <Text style={styles.quizLabelText}>Quiz Challenge</Text>
+            <Text style={styles.quizLabelText}>{isLocked ? 'Quiz Locked' : 'Quiz Challenge'}</Text>
           </View>
         </View>
       </View>
     );
   };
 
-  const renderBadgeNode = (badgeInfo, index) => {
+  const renderBadgeNode = (badgeInfo, index, isLocked = false) => {
     const isEven = index % 2 === 0;
 
     return (
@@ -362,22 +390,25 @@ const ProgressMap = ({ navigation }) => {
         {/* Connecting Path */}
         <View style={styles.pathWrapper}>
           <View style={[styles.pathLine, isEven ? styles.pathLineRight : styles.pathLineLeft]}>
-            <LinearGradient colors={['#B8E6D5', '#7EC8A3']} style={styles.pathGradient} />
+            <LinearGradient colors={isLocked ? ['#E5E7EB', '#D1D5DB'] : ['#B8E6D5', '#7EC8A3']} style={styles.pathGradient} />
           </View>
         </View>
 
         <View style={styles.badgeWrapper}>
           <LinearGradient
-            colors={['#F59E0B', '#D97706', '#B45309']}
-            style={styles.badgeNode}
+            colors={isLocked ? ['#D1D5DB', '#9CA3AF', '#6B7280'] : ['#F59E0B', '#D97706', '#B45309']}
+            style={[styles.badgeNode, isLocked && { elevation: 2 }]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
             <View style={styles.badgeStarburst}>
-              <Text style={styles.badgeStars}>⭐</Text>
+              <Text style={[styles.badgeStars, isLocked && { opacity: 0.2 }]}>⭐</Text>
             </View>
-            <Image source={require('../assests/coin.png')} style={styles.badgeIcon} />
-            <Text style={styles.badgeEarnedText}>Badge Earned!</Text>
+            <Image 
+              source={isLocked ? require('../assests/settings.png') : require('../assests/coin.png')} 
+              style={[styles.badgeIcon, isLocked && { tintColor: '#FFF', width: 28, height: 28 }]} 
+            />
+            <Text style={styles.badgeEarnedText}>{isLocked ? 'Locked' : 'Badge Earned!'}</Text>
           </LinearGradient>
           
           <View style={styles.badgeInfoCard}>
@@ -496,7 +527,8 @@ const ProgressMap = ({ navigation }) => {
             // Add badge after certain levels
             const badge = badges.find((b) => b.afterLevel === level.levelNumber && b.module === level.module);
             if (badge) {
-              elements.push(renderBadgeNode(badge, index));
+              const isBadgeLocked = level.status !== 'completed';
+              elements.push(renderBadgeNode(badge, index, isBadgeLocked));
             }
 
             // Show Qaida completion and Quran transition at the end of Takhti 7.

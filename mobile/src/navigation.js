@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native'
 import React from 'react'
 import { NavigationContainer } from "@react-navigation/native";
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import Splash from './auth/Splash';
 import Onboarding from './auth/Onboarding';
@@ -36,46 +37,48 @@ const Stack = createNativeStackNavigator();
 
 const navigation = () => {
   return (
-     <NavigationContainer>
-      <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false }}>
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <Stack.Navigator initialRouteName="Splash" screenOptions={{ headerShown: false }}>
+          
+          <Stack.Screen name="Splash" component={Splash} />
+           <Stack.Screen name="Onboarding" component={Onboarding} /> 
+            <Stack.Screen name="SignUp" component={SignUp} />
+           <Stack.Screen name="Login" component={Login} /> 
+              <Stack.Screen name="Otp" component={Otp} /> 
+              <Stack.Screen name="LearnerSurvey" component={LearnerSurvey} />
+              <Stack.Screen name="ForgetPassword" component={ForgetPassword} />
+              <Stack.Screen name="ResetPassword" component={ResetPassword} /> 
+                  <Stack.Screen name="DuaLearn" component={DuaLearn}  options={{title:'Dua Screen',headerShown: true ,headerTintColor:'#2b624c'}}/> 
+                  <Stack.Screen name="DuaDetail" component={DuaDetail}  options={{title:'Dua Detail',headerShown: true ,headerTintColor:'#2b624c'}}/> 
+                  <Stack.Screen name="Quran" component={Quran}options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}} /> 
+                  <Stack.Screen name="BottomTabNavigator" component={BottomTabNavigator} />
+                  <Stack.Screen name="AllAya" component={AllAya} options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}}/>
+                  <Stack.Screen name="AyaDetail" component={AyaDetail}  options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}}/>
+                   <Stack.Screen name="Quaida" component={Quaida} options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}} />
+                     <Stack.Screen name="QuidaTaqkti" component={QuidaTaqkti} options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}}/>
+                     <Stack.Screen name="QuidaDetail" component={QuidaDetail} />
+                     <Stack.Screen name="NotificationScreen" component={NotificationScreen} options={{title:'Notifications',headerShown: true ,headerTintColor:'#2b624c'}}/>
+        <Stack.Screen name="EditProfile" component={EditProfile} options={{title:'Edit Profile',headerShown: true ,headerTintColor:'#2b624c'}}/>
+                       <Stack.Screen name="ChangPasswordScreen" component={ChangPasswordScreen} options={{title:'Notifications',headerShown: true ,headerTintColor:'#2b624c'}}/>
         
-        <Stack.Screen name="Splash" component={Splash} />
-         <Stack.Screen name="Onboarding" component={Onboarding} /> 
-          <Stack.Screen name="SignUp" component={SignUp} />
-         <Stack.Screen name="Login" component={Login} /> 
-            <Stack.Screen name="Otp" component={Otp} /> 
-            <Stack.Screen name="LearnerSurvey" component={LearnerSurvey} />
-            <Stack.Screen name="ForgetPassword" component={ForgetPassword} />
-            <Stack.Screen name="ResetPassword" component={ResetPassword} /> 
-                <Stack.Screen name="DuaLearn" component={DuaLearn}  options={{title:'Dua Screen',headerShown: true ,headerTintColor:'#2b624c'}}/> 
-                <Stack.Screen name="DuaDetail" component={DuaDetail}  options={{title:'Dua Detail',headerShown: true ,headerTintColor:'#2b624c'}}/> 
-                <Stack.Screen name="Quran" component={Quran}options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}} /> 
-                <Stack.Screen name="BottomTabNavigator" component={BottomTabNavigator} />
-                <Stack.Screen name="AllAya" component={AllAya} options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}}/>
-                <Stack.Screen name="AyaDetail" component={AyaDetail}  options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}}/>
-                 <Stack.Screen name="Quaida" component={Quaida} options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}} />
-                   <Stack.Screen name="QuidaTaqkti" component={QuidaTaqkti} options={{title:'Quran Screen',headerShown: true ,headerTintColor:'#2b624c'}}/>
-                   <Stack.Screen name="QuidaDetail" component={QuidaDetail} />
-                   <Stack.Screen name="NotificationScreen" component={NotificationScreen} options={{title:'Notifications',headerShown: true ,headerTintColor:'#2b624c'}}/>
-      <Stack.Screen name="EditProfile" component={EditProfile} options={{title:'Edit Profile',headerShown: true ,headerTintColor:'#2b624c'}}/>
-                     <Stack.Screen name="ChangPasswordScreen" component={ChangPasswordScreen} options={{title:'Notifications',headerShown: true ,headerTintColor:'#2b624c'}}/>
-      
-      {/* Progress Map Screens */}
-      <Stack.Screen name="ProgressMap" component={ProgressMap} />
-      <Stack.Screen name="LevelDetail" component={LevelDetail} />
-      <Stack.Screen name="QuizScreen" component={QuizScreen} />
-      
-      {/* Mistake Practice Screen */}
-      <Stack.Screen name="MistakePractice" component={MistakePractice} options={{title:'Practice Mistake',headerShown: true ,headerTintColor:'#2b624c'}}/>
-      
-      {/* Recitation Result Screen */}
-      <Stack.Screen name="RecitationResult" component={RecitationResult} options={{title:'Recitation Result',headerShown: true ,headerTintColor:'#2b624c'}}/>
-      
-      {/* Parent Screens */}
-      <Stack.Screen name="ParentNavigator" component={ParentNavigator} />
-      
-      </Stack.Navigator>
-    </NavigationContainer>
+        {/* Progress Map Screens */}
+        <Stack.Screen name="ProgressMap" component={ProgressMap} />
+        <Stack.Screen name="LevelDetail" component={LevelDetail} />
+        <Stack.Screen name="QuizScreen" component={QuizScreen} />
+        
+        {/* Mistake Practice Screen */}
+        <Stack.Screen name="MistakePractice" component={MistakePractice} options={{title:'Practice Mistake',headerShown: true ,headerTintColor:'#2b624c'}}/>
+        
+        {/* Recitation Result Screen */}
+        <Stack.Screen name="RecitationResult" component={RecitationResult} options={{title:'Recitation Result',headerShown: true ,headerTintColor:'#2b624c'}}/>
+        
+        {/* Parent Screens */}
+        <Stack.Screen name="ParentNavigator" component={ParentNavigator} />
+        
+        </Stack.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
   )
 }
 

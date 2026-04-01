@@ -11,6 +11,7 @@ const coinTransactionSchema = new mongoose.Schema({
     enum: [
       'lesson_complete',
       'quiz_pass',
+      'quiz_fail',
       'quiz_perfect',
       'achievement',
       'daily_bonus',

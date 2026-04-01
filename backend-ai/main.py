@@ -5,7 +5,7 @@ import os
 import sys
 
 # FORCE ADD FFMPEG TO PATH
-ffmpeg_path = r"C:\Users\ullah\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0.1-full_build\bin"
+ffmpeg_path = r"C:\Users\M. Faizan\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1-full_build\bin"
 if os.path.exists(ffmpeg_path):
     os.environ["PATH"] += os.pathsep + ffmpeg_path
     print(f"Added FFmpeg to PATH: {ffmpeg_path}")
