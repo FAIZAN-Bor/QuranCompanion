@@ -11,6 +11,12 @@ const getNotifications = async (req, res, next) => {
     if (type) query.type = type;
     if (isRead !== undefined) query.isRead = isRead === 'true';
 
+    // Only show notifications that are already due
+    query.$or = [
+      { scheduledFor: null },
+      { scheduledFor: { $lte: new Date() } }
+    ];
+
     const skip = (page - 1) * limit;
 
     const notifications = await Notification.find(query)
@@ -40,7 +46,11 @@ const getUnreadCount = async (req, res, next) => {
   try {
     const count = await Notification.countDocuments({
       user: req.user.id,
-      isRead: false
+      isRead: false,
+      $or: [
+        { scheduledFor: null },
+        { scheduledFor: { $lte: new Date() } }
+      ]
     });
 
     res.status(200).json({

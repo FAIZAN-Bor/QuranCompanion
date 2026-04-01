@@ -9,7 +9,7 @@ const DuaLearn = ({ route, navigation }) => {
   const [duaData, setDuaData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const category = route.params?.category || 'daily';
+  const category = route.params?.category || 'all';
 
   useEffect(() => {
     fetchDuas();
@@ -18,7 +18,11 @@ const DuaLearn = ({ route, navigation }) => {
   const fetchDuas = async () => {
     try {
       setLoading(true);
-      const response = await contentService.getDuas({ category });
+      const filters = {};
+      if (category !== 'all') {
+        filters.category = category;
+      }
+      const response = await contentService.getDuas(filters);
       setDuaData(response.data?.content || []);
     } catch (error) {
       console.error('Dua fetch error:', error);

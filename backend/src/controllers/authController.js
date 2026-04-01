@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const { generateToken } = require('../config/jwt');
 const { sendOTPEmail, sendWelcomeEmail, sendPasswordResetEmail } = require('../utils/emailService');
+const { scheduleDuaNotifications } = require('../utils/duaNotificationHelper');
 const crypto = require('crypto');
 
 // @desc    Register new user
@@ -93,6 +94,9 @@ const verifyOTP = async (req, res, next) => {
 
     // Send welcome email (optional, don't wait for it)
     sendWelcomeEmail(email, user.name).catch(err => console.error(err));
+
+    // Schedule Dua notifications for the user
+    scheduleDuaNotifications(user._id).catch(err => console.error('Error scheduling Duas:', err));
 
     // Generate JWT token
     const token = generateToken(user._id, user.role);
@@ -202,6 +206,9 @@ const login = async (req, res, next) => {
     user.otp = undefined;
     user.otpExpiry = undefined;
     await user.save();
+
+    // Schedule Dua notifications for the user on login
+    scheduleDuaNotifications(user._id).catch(err => console.error('Error scheduling Duas:', err));
 
     // Generate token
     const token = generateToken(user._id, user.role);
