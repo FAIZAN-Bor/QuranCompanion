@@ -1,5 +1,6 @@
 // DuaLearn.js
-import { StyleSheet, Text, View, FlatList, SafeAreaView, TouchableOpacity, Image, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, Text, View, FlatList, TouchableOpacity, Image, ActivityIndicator, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState, useEffect } from 'react';
 import LinearGradient from 'react-native-linear-gradient';
 import contentService from '../services/contentService';

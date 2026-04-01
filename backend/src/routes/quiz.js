@@ -4,7 +4,8 @@ const {
   submitQuiz,
   getQuizResults,
   getBestScore,
-  getQuizStats
+  getQuizStats,
+  getQuizQuestions
 } = require('../controllers/quizController');
 const { protect } = require('../middleware/auth');
 const { validate, validationRules } = require('../middleware/validator');
@@ -13,6 +14,7 @@ const { validate, validationRules } = require('../middleware/validator');
 router.use(protect);
 
 router.post('/submit', validationRules.submitQuiz, validate, submitQuiz);
+router.get('/questions/:levelId', getQuizQuestions);
 router.get('/results', getQuizResults);
 router.get('/best/:quizId', getBestScore);
 router.get('/stats', getQuizStats);

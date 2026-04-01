@@ -1,4 +1,5 @@
 const QuizResult = require('../models/QuizResult');
+const Quiz = require('../models/Quiz');
 const User = require('../models/User');
 const { awardCoins, calculateQuizCoins } = require('../utils/coinHelper');
 const { checkAchievements } = require('../utils/achievementHelper');
@@ -185,9 +186,40 @@ const getQuizStats = async (req, res, next) => {
   }
 };
 
+// @desc    Get questions for a quiz
+// @route   GET /api/quiz/questions/:levelId
+// @access  Private
+const getQuizQuestions = async (req, res, next) => {
+  try {
+    const { levelId } = req.params;
+
+    const quiz = await Quiz.findOne({ levelId });
+
+    if (!quiz) {
+      return res.status(404).json({
+        success: false,
+        message: 'Quiz not found for this level'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { 
+        quizId: quiz._id,
+        title: quiz.title,
+        questions: quiz.questions,
+        passingScore: quiz.passingScore
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   submitQuiz,
   getQuizResults,
   getBestScore,
-  getQuizStats
+  getQuizStats,
+  getQuizQuestions
 };

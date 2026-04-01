@@ -12,6 +12,16 @@ class QuizService {
     }
   }
 
+  // Get quiz questions
+  async getQuestions(levelId) {
+    try {
+      const response = await api.get(`/quiz/questions/${levelId}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
   // Get quiz results
   async getQuizResults(filters = {}) {
     try {
