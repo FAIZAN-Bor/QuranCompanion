@@ -11,6 +11,7 @@ const notificationSchema = new mongoose.Schema({
     enum: [
       'achievement',
       'daily_reminder',
+      'dua_reminder',
       'quiz_result',
       'parent_report',
       'level_unlock',

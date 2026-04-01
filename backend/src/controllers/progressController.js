@@ -3,6 +3,7 @@ const User = require('../models/User');
 const { awardCoins, calculateLessonCoins } = require('../utils/coinHelper');
 const { checkAchievements } = require('../utils/achievementHelper');
 const Notification = require('../models/Notification');
+const { notifyParents } = require('../utils/parentNotificationHelper');
 
 // @desc    Get user progress
 // @route   GET /api/progress
@@ -126,6 +127,15 @@ const updateLessonProgress = async (req, res, next) => {
             { icon: 'trophy', priority: 'high' }
           );
         }
+
+        // Notify parents about lesson completion
+        await notifyParents(
+          req.user.id,
+          'level_unlock',
+          'Lesson Completed!',
+          `has completed a ${module} lesson in ${levelId} with ${accuracy}% accuracy.`,
+          { module, levelId, lessonId, accuracy }
+        );
       }
 
       await progress.save();

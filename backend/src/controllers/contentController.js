@@ -6,10 +6,11 @@ const Content = require('../models/Content');
 const getContentByType = async (req, res, next) => {
   try {
     const { type } = req.params;
-    const { difficulty, tags } = req.query;
+    const { difficulty, tags, category } = req.query;
 
     let filters = {};
     if (difficulty) filters.difficulty = difficulty;
+    if (category) filters.category = category;
     if (tags) filters.tags = { $in: tags.split(',') };
 
     const content = await Content.getByType(type, filters);

@@ -4,6 +4,7 @@ const User = require('../models/User');
 const { awardCoins, calculateQuizCoins } = require('../utils/coinHelper');
 const { checkAchievements } = require('../utils/achievementHelper');
 const Notification = require('../models/Notification');
+const { notifyParents } = require('../utils/parentNotificationHelper');
 
 // @desc    Submit quiz result
 // @route   POST /api/quiz/submit
@@ -80,6 +81,14 @@ const submitQuiz = async (req, res, next) => {
         passed ? 'Quiz Passed! 🎉' : 'Quiz Completed',
         `You scored ${percentage}% on ${quizId}. ${passed ? `Earned ${quizResult.coinsEarned} coins!` : 'Try again to improve!'}`,
         { icon: passed ? 'check' : 'info', priority: 'high' }
+      );
+
+      await notifyParents(
+        req.user.id,
+        'quiz_result',
+        passed ? 'Quiz Passed! 🏆' : 'Quiz Completed',
+        `scored ${percentage}% on ${quizId} and ${passed ? 'passed!' : 'is working on improving.'}`,
+        { quizId, percentage, passed, coinsEarned: quizResult.coinsEarned }
       );
     }
 

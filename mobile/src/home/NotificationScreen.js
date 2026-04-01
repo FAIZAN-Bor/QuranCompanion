@@ -13,11 +13,55 @@ const NotificationScreen = () => {
     fetchNotifications();
   }, []);
 
+  const getTimeAgo = (date) => {
+    if (!date) return '';
+    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+    let interval = seconds / 31536000;
+    if (interval > 1) return Math.floor(interval) + ' years ago';
+    interval = seconds / 2592000;
+    if (interval > 1) return Math.floor(interval) + ' months ago';
+    interval = seconds / 86400; 
+    if (interval > 1) return Math.floor(interval) + ' days ago';
+    interval = seconds / 3600;
+    if (interval > 1) return Math.floor(interval) + ' hours ago';
+    interval = seconds / 60;
+    if (interval > 1) return Math.floor(interval) + ' min ago';
+    return 'Just now';
+  };
+
+  const getNotificationIcon = (type, iconData) => {
+    switch (type) {
+      case 'dua_reminder':
+        return require('../assests/dua.png');
+      case 'achievement':
+        return require('../assests/Achievements.png');
+      case 'quiz_result':
+        return require('../assests/quiz.png');
+      case 'level_unlock':
+        return require('../assests/quaida.png');
+      case 'mistake_resolved':
+        return require('../assests/mistake.png');
+      default:
+        return require('../assests/bell.png');
+    }
+  };
+
   const fetchNotifications = async () => {
     try {
       setLoading(true);
       const response = await notificationService.getNotifications(1, 20);
-      setNotifications(response.data.notifications || getMockNotifications());
+      
+      if (response && response.data && response.data.notifications && response.data.notifications.length > 0) {
+        const formatted = response.data.notifications.map(n => ({
+          ...n,
+          id: n._id,
+          time: getTimeAgo(n.sentAt || n.createdAt),
+          icon: getNotificationIcon(n.type, n.icon)
+        }));
+        setNotifications(formatted);
+      } else {
+        setNotifications(getMockNotifications());
+      }
     } catch (error) {
       console.error('Notifications fetch error:', error);
       setNotifications(getMockNotifications());
