@@ -11,7 +11,7 @@ export const BASE_URL = 'http://10.123.112.60:5000/api';
 // Create axios instance
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 10000,
+  timeout: 20000,
   headers: {
     'Content-Type': 'application/json',
   },

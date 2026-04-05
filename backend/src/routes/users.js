@@ -5,7 +5,8 @@ const {
   changePassword,
   submitSurvey,
   getSurvey,
-  getDashboard
+  getDashboard,
+  deleteAccount
 } = require('../controllers/userController');
 const { protect } = require('../middleware/auth');
 const { validate, validationRules } = require('../middleware/validator');
@@ -18,5 +19,6 @@ router.put('/change-password', changePassword);
 router.post('/survey', validationRules.submitSurvey, validate, submitSurvey);
 router.get('/survey', getSurvey);
 router.get('/dashboard', getDashboard);
+router.delete('/account', deleteAccount);
 
 module.exports = router;

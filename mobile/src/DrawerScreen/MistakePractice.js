@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import LinearGradient from 'react-native-linear-gradient';
 import mistakeService from '../services/mistakeService';
-import { analyzeRecitation } from '../services/recitationService';
+import contentService from '../services/contentService';
 import useAudioRecorder from '../hooks/useAudioRecorder';
 
 export default function MistakePractice({ route, navigation }) {
@@ -28,11 +28,8 @@ export default function MistakePractice({ route, navigation }) {
     stopRecording: stopAudioRecording,
     playRecording,
     stopPlayback,
-    resetRecording,
   } = useAudioRecorder();
 
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [practiceAttempts, setPracticeAttempts] = useState(0);
   const [feedback, setFeedback] = useState(null);
@@ -69,15 +66,48 @@ export default function MistakePractice({ route, navigation }) {
   };
 
   // Navigate to the actual lesson screen for practice
-  const navigateToLesson = () => {
+  const navigateToLesson = async () => {
     const module = mistake.module?.toLowerCase();
     
     if (module === 'quran') {
+      const ayahNumber = extractAyahNumber(mistake.lessonId);
+      let quranContent = null;
+
+      try {
+        if (mistake.contentId) {
+          const byId = await contentService.getContentById(mistake.contentId);
+          quranContent = byId?.data?.content || null;
+        }
+
+        if (!quranContent && isMongoId(mistake.levelId)) {
+          const byLevelId = await contentService.getContentById(mistake.levelId);
+          quranContent = byLevelId?.data?.content || null;
+        }
+
+        if (!quranContent) {
+          const surahNumber = extractSurahNumber(mistake.levelId);
+          if (surahNumber) {
+            const byNumber = await contentService.getContentByNumber('Quran', surahNumber);
+            quranContent = byNumber?.data?.content || null;
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to resolve Quran content for mistake practice:', error?.message || error);
+      }
+
+      const verses = Array.isArray(quranContent?.ayahs)
+        ? quranContent.ayahs
+        : (Array.isArray(quranContent?.verses) ? quranContent.verses : []);
+      const matchedAyah = verses.find((v) => (v?.number ?? v?.verseNumber) === ayahNumber) || null;
+
       // Navigate to AyaDetail with practice content from mistake
       const practiceData = {
-        number: extractAyahNumber(mistake.lessonId),
-        _id: mistake.contentId,
-        text: mistake.description,
+        number: ayahNumber,
+        _id: quranContent?._id || mistake.contentId || null,
+        surahNumber: quranContent?.number || extractSurahNumber(mistake.levelId) || 1,
+        arabic: matchedAyah?.arabic || matchedAyah?.arabicText || getArabicFromDescription(mistake.description),
+        english: matchedAyah?.english || matchedAyah?.translation || matchedAyah?.transliteration || mistake.description || '',
+        audioUrl: matchedAyah?.audioUrl || quranContent?.audioUrl || mistake.audioUrl || null,
         // Additional data for practice mode
         isPracticeMode: true,
         mistakeId: mistake._id,
@@ -86,8 +116,8 @@ export default function MistakePractice({ route, navigation }) {
       
       navigation.navigate('AyaDetail', {
         data: practiceData,
-        surahId: mistake.levelId,
-        surahName: mistake.levelId?.replace('surah_', 'Surah ') || 'Practice'
+        surahId: quranContent?._id || mistake.levelId,
+        surahName: quranContent?.name || formatSurahName(mistake.levelId)
       });
     } else if (module === 'qaida') {
       // Navigate to QuidaDetail with practice content from mistake
@@ -124,6 +154,20 @@ export default function MistakePractice({ route, navigation }) {
     return match ? parseInt(match[0]) : 1;
   };
 
+  const extractSurahNumber = (levelId) => {
+    if (!levelId) return null;
+    const match = String(levelId).match(/surah_(\d+)/i);
+    return match ? parseInt(match[1]) : null;
+  };
+
+  const isMongoId = (value) => typeof value === 'string' && /^[a-f\d]{24}$/i.test(value);
+
+  const formatSurahName = (levelId) => {
+    const surahNumber = extractSurahNumber(levelId);
+    if (surahNumber) return `Surah ${surahNumber}`;
+    return 'Practice';
+  };
+
   // Helper to extract character number from lessonId like "character_3"
   const extractCharacterNumber = (lessonId) => {
     if (!lessonId) return 1;
@@ -139,75 +183,12 @@ export default function MistakePractice({ route, navigation }) {
   };
 
   const startRecording = async () => {
-    setAnalysisResult(null);
     setFeedback(null);
     await startAudioRecording();
   };
 
   const stopRecording = async () => {
     await stopAudioRecording();
-  };
-
-  const handleAnalyze = async () => {
-    if (!audioPath) {
-      Alert.alert('Record First', 'Please record your pronunciation before analyzing.');
-      return;
-    }
-
-    setAnalyzing(true);
-    try {
-      // Build ground truth from mistake data
-      const groundTruth = getArabicFromDescription(mistake.description) || mistake.title || '';
-      const module = mistake.module || 'Qaida';
-
-      const result = await analyzeRecitation(
-        audioPath,
-        groundTruth,
-        module,
-        mistake.levelId || `${module.toLowerCase()}_1`,
-        mistake.lessonId || 'practice'
-      );
-
-      if (result?.success && result.data) {
-        setAnalysisResult(result.data);
-        setPracticeAttempts(prev => prev + 1);
-
-        const score = result.data.overallScore || 0;
-
-        // Auto-submit practice attempt based on AI score
-        try {
-          await mistakeService.submitPracticeAttempt(mistake._id, {
-            isCorrect: score >= 80,
-            attemptNumber: practiceAttempts + 1,
-            practiceTime: recordingSeconds,
-            audioPath: result.data.audioUrl || null,
-          });
-
-          if (score >= 80) {
-            setFeedback({
-              type: 'success',
-              title: 'Excellent!',
-              message: `You scored ${score}%! This mistake has been resolved.`
-            });
-          } else {
-            setFeedback({
-              type: 'info',
-              title: 'Keep Practicing',
-              message: `You scored ${score}%. Try again to improve your pronunciation.`
-            });
-          }
-        } catch (submitErr) {
-          console.error('Submit practice error:', submitErr);
-        }
-      } else {
-        Alert.alert('Analysis Issue', 'Could not get analysis results. Please try again.');
-      }
-    } catch (error) {
-      console.error('Analysis error:', error);
-      Alert.alert('Analysis Error', error.message || 'Failed to analyze recitation.');
-    } finally {
-      setAnalyzing(false);
-    }
   };
 
   const submitPractice = async (isCorrect) => {
@@ -350,17 +331,25 @@ export default function MistakePractice({ route, navigation }) {
           <Text style={styles.recordingLabel}>Your Recitation</Text>
           
           {/* Record Button */}
-          <Animated.View style={{ transform: [{ scale: isRecording ? pulseAnim : 1 }] }}>
+          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
             <TouchableOpacity
               style={[styles.recordButton, isRecording && styles.recordingActive]}
               onPress={isRecording ? stopRecording : startRecording}
-              disabled={analyzing}
             >
               <LinearGradient
                 colors={isRecording ? ['#F44336', '#EF5350'] : ['#0A7D4F', '#15B872']}
                 style={styles.recordButtonGradient}
               >
-                <Text style={styles.recordButtonIcon}>{isRecording ? '⏹' : '🎤'}</Text>
+                {isRecording ? (
+                  <View style={styles.recordingBadge}>
+                    <Text style={styles.recordingBadgeText}>STOP</Text>
+                  </View>
+                ) : (
+                  <Image
+                    source={require('../assests/mic.png')}
+                    style={styles.recordButtonIconImage}
+                  />
+                )}
                 <Text style={styles.recordButtonText}>
                   {isRecording ? 'Stop Recording' : (audioPath ? 'Record Again' : 'Start Recording')}
                 </Text>
@@ -376,76 +365,15 @@ export default function MistakePractice({ route, navigation }) {
             </View>
           )}
 
-          {/* Recorded - Analyze Button */}
-          {audioPath && !isRecording && !analysisResult && (
+          {/* Recorded actions */}
+          {audioPath && !isRecording && (
             <View style={styles.recordedConfirmation}>
               <Text style={styles.recordedText}>Recording Complete</Text>
               <View style={styles.postRecordActions}>
                 <TouchableOpacity onPress={isPlaying ? stopPlayback : playRecording} style={styles.playBtn}>
-                  <Text style={styles.playBtnText}>{isPlaying ? '⏹ Stop' : '▶ Play'}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleAnalyze} disabled={analyzing} style={styles.analyzeBtn}>
-                  <LinearGradient
-                    colors={['#0A7D4F', '#15B872']}
-                    style={styles.analyzeBtnGradient}
-                  >
-                    {analyzing ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <Text style={styles.analyzeBtnText}>Analyze with AI</Text>
-                    )}
-                  </LinearGradient>
+                  <Text style={styles.playBtnText}>{isPlaying ? 'Stop' : 'Play'}</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          )}
-
-          {/* Analyzing indicator */}
-          {analyzing && (
-            <View style={styles.analyzingContainer}>
-              <ActivityIndicator size="large" color="#0A7D4F" />
-              <Text style={styles.analyzingText}>Analyzing your recitation...</Text>
-            </View>
-          )}
-
-          {/* AI Analysis Result */}
-          {analysisResult && (
-            <View style={styles.aiResultCard}>
-              <Text style={styles.aiResultTitle}>AI Analysis Result</Text>
-              <Text style={[styles.aiScoreText, { 
-                color: (analysisResult.overallScore || 0) >= 80 ? '#0A7D4F' : (analysisResult.overallScore || 0) >= 60 ? '#FFA726' : '#E53935' 
-              }]}>
-                {analysisResult.overallScore || 0}%
-              </Text>
-              <View style={styles.aiScoreBreakdown}>
-                <View style={styles.aiScoreItem}>
-                  <Text style={styles.aiScoreLabel}>Text</Text>
-                  <Text style={styles.aiScoreValue}>{analysisResult.accuracyScore || 0}%</Text>
-                </View>
-                <View style={styles.aiScoreItem}>
-                  <Text style={styles.aiScoreLabel}>Pronunciation</Text>
-                  <Text style={styles.aiScoreValue}>{analysisResult.pronunciationScore || 0}%</Text>
-                </View>
-                <View style={styles.aiScoreItem}>
-                  <Text style={styles.aiScoreLabel}>Tajweed</Text>
-                  <Text style={styles.aiScoreValue}>{analysisResult.tajweedScore || 0}%</Text>
-                </View>
-              </View>
-              {analysisResult.mistakes?.length > 0 && (
-                <View style={styles.aiMistakes}>
-                  {analysisResult.mistakes.slice(0, 3).map((m, i) => (
-                    <Text key={i} style={styles.aiMistakeText}>
-                      • {m.suggestion || `${m.type}: "${m.word}"`}
-                    </Text>
-                  ))}
-                </View>
-              )}
-              <TouchableOpacity 
-                onPress={() => { setAnalysisResult(null); setFeedback(null); resetRecording(); }} 
-                style={styles.retryBtn}
-              >
-                <Text style={styles.retryBtnText}>Try Again</Text>
-              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -462,8 +390,8 @@ export default function MistakePractice({ route, navigation }) {
           </View>
         )}
 
-        {/* Self Assessment Buttons - shown as fallback when AI analysis is not done */}
-        {audioPath && !isRecording && !analysisResult && !analyzing && (
+        {/* Self Assessment Buttons */}
+        {audioPath && !isRecording && (
           <View style={styles.assessmentSection}>
             <Text style={styles.assessmentLabel}>Or self-assess your recitation:</Text>
             
@@ -627,12 +555,12 @@ const styles = StyleSheet.create({
     width: 150,
     height: 150,
     borderRadius: 75,
-    overflow: 'hidden',
     elevation: 8,
     shadowColor: '#0A7D4F',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
+    backgroundColor: 'transparent',
   },
   recordingActive: {
     borderWidth: 3,
@@ -641,12 +569,29 @@ const styles = StyleSheet.create({
   recordButtonGradient: {
     width: '100%',
     height: '100%',
+    borderRadius: 75,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  recordButtonIcon: {
-    fontSize: 40,
+  recordButtonIconImage: {
+    width: 42,
+    height: 42,
+    resizeMode: 'contain',
+    tintColor: '#fff',
     marginBottom: 5,
+  },
+  recordingBadge: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 6,
+  },
+  recordingBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.6,
   },
   recordButtonText: {
     color: '#fff',
@@ -827,100 +772,6 @@ const styles = StyleSheet.create({
   },
   playBtnText: {
     color: '#0A7D4F',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  analyzeBtn: {
-    borderRadius: 10,
-    overflow: 'hidden',
-    elevation: 4,
-  },
-  analyzeBtnGradient: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-  },
-  analyzeBtnText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  analyzingContainer: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  analyzingText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0A7D4F',
-    marginTop: 10,
-  },
-  // AI Result styles
-  aiResultCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginTop: 20,
-    elevation: 4,
-    shadowColor: '#0A7D4F',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-  },
-  aiResultTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0A7D4F',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  aiScoreText: {
-    fontSize: 36,
-    fontWeight: '900',
-    textAlign: 'center',
-    marginBottom: 15,
-  },
-  aiScoreBreakdown: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E8F5E9',
-  },
-  aiScoreItem: {
-    alignItems: 'center',
-  },
-  aiScoreLabel: {
-    fontSize: 12,
-    color: '#999',
-    fontWeight: '600',
-  },
-  aiScoreValue: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#333',
-    marginTop: 2,
-  },
-  aiMistakes: {
-    marginTop: 12,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#E8F5E9',
-  },
-  aiMistakeText: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-    lineHeight: 18,
-  },
-  retryBtn: {
-    backgroundColor: '#FFF3E0',
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 15,
-  },
-  retryBtnText: {
-    color: '#F57C00',
     fontWeight: '700',
     fontSize: 14,
   },

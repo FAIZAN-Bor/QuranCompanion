@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 import ScoreCircle from '../component/ScoreCircle';
 import TajweedRuleItem from '../component/TajweedRuleItem';
 import MistakeCard from '../component/MistakeCard';
+import CoinRewardOverlay from '../component/CoinRewardOverlay';
 
 const { width } = Dimensions.get('window');
 
@@ -19,6 +20,9 @@ const RecitationResult = ({ route, navigation }) => {
   const { result, module, title, subtitle, lessonNumber = 0, requiredThreshold = 70, canMarkDone } = route.params;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+
+  const [showCoinOverlay, setShowCoinOverlay] = useState(false);
+  const [coinsEarned, setCoinsEarned] = useState(0);
 
   const pickScore = (...values) => {
     for (const value of values) {
@@ -40,7 +44,16 @@ const RecitationResult = ({ route, navigation }) => {
         duration: 600,
         useNativeDriver: true,
       }),
-    ]).start();
+    ]).start(() => {
+      // Show coin overlay 800ms after screen finishes animating in
+      const earned = calculateRecitationCoins(overallScore);
+      if (earned > 0) {
+        setTimeout(() => {
+          setCoinsEarned(earned);
+          setShowCoinOverlay(true);
+        }, 800);
+      }
+    });
   }, []);
 
   const getGradeInfo = (score) => {
@@ -57,6 +70,16 @@ const RecitationResult = ({ route, navigation }) => {
   const tajweedScore = pickScore(result?.tajweedScore, result?.tajweed_score);
   const canFinish = typeof canMarkDone === 'boolean' ? canMarkDone : overallScore >= requiredThreshold;
   const gradeInfo = getGradeInfo(overallScore);
+
+  // Calculate coins earned for this recitation (mirrors backend coinHelper logic)
+  const calculateRecitationCoins = (score) => {
+    let coins = 0;
+    if (score < requiredThreshold) return 0; // Didn't pass threshold
+    coins += 20; // Base lesson completion
+    if (score >= 95) coins += 10;
+    else if (score >= 85) coins += 5;
+    return coins;
+  };
 
   // Build sub-scores dynamically based on module & lesson
   // Qaida 1-3: Only Pronunciation
@@ -75,6 +98,12 @@ const RecitationResult = ({ route, navigation }) => {
     subScores.push({ label: 'Tajweed', score: tajweedScore, icon: '📖' });
   }
 
+  const applicableTajweedRules = (result?.tajweedAnalysis || []).filter((item) => {
+    // New backend sends explicit applicability; old records fallback to score presence.
+    if (typeof item?.applicable === 'boolean') return item.applicable;
+    return item?.score != null;
+  });
+
   const getScoreColor = (s) => {
     if (s >= 80) return '#0A7D4F';
     if (s >= 60) return '#FFA726';
@@ -84,6 +113,14 @@ const RecitationResult = ({ route, navigation }) => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#F4FFF5" />
+
+      {/* Gamified Coin Celebration Overlay */}
+      <CoinRewardOverlay
+        visible={showCoinOverlay}
+        coins={coinsEarned}
+        message={overallScore >= 95 ? '🌟 Excellent Recitation! Accuracy Bonus!' : '✅ Lesson passed!'}
+        onDismiss={() => setShowCoinOverlay(false)}
+      />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -162,14 +199,20 @@ const RecitationResult = ({ route, navigation }) => {
         )}
 
         {/* Tajweed Rules — hidden for Qaida Lessons 1-3 */}
-        {showTajweed && result?.tajweedAnalysis && result.tajweedAnalysis.length > 0 && (
+        {showTajweed && applicableTajweedRules.length > 0 && (
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Tajweed Rules</Text>
             <Text style={styles.sectionSubtitle}>
-              Score breakdown for each tajweed rule
+              Applicable rules with fulfillment status
             </Text>
-            {result.tajweedAnalysis.map((item, idx) => (
-              <TajweedRuleItem key={idx} rule={item.rule} score={item.score} />
+            {applicableTajweedRules.map((item, idx) => (
+              <TajweedRuleItem
+                key={idx}
+                rule={item.rule}
+                score={item.score}
+                fulfilled={item.fulfilled}
+                totalChecks={item.totalChecks}
+              />
             ))}
           </View>
         )}

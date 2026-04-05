@@ -15,8 +15,11 @@ import {
 import LinearGradient from 'react-native-linear-gradient';
 import { surveyQuestions, calculateProficiencyLevel, getSections } from '../assests/data/surveyData';
 import userService from '../services/userService';
+import { useAuth } from '../context/AuthContext';
 
 const LearnerSurvey = ({ navigation }) => {
+  const { updateUser } = useAuth();
+  
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState({});
   const [otherGoalText, setOtherGoalText] = useState('');
@@ -115,6 +118,9 @@ const LearnerSurvey = ({ navigation }) => {
 
       // Submit to backend
       const response = await userService.submitSurvey(surveyData);
+      
+      // Update global user state with the new proficiency level
+      await updateUser();
       
       setResult(proficiency);
       

@@ -11,6 +11,15 @@ const QuizResults = ({ route }) => {
   const [quizzes, setQuizzes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowMs(Date.now());
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (child?._id) {
@@ -43,17 +52,30 @@ const QuizResults = ({ route }) => {
 
   const getTimeAgo = (timestamp) => {
     if (!timestamp) return 'Unknown';
-    const now = new Date();
+
+    const now = new Date(nowMs);
     const date = new Date(timestamp);
-    const diffMs = now - date;
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    
-    if (diffHours < 1) return 'Just now';
-    if (diffHours < 24) return `${diffHours} hours ago`;
+    const dateMs = date.getTime();
+    if (!Number.isFinite(dateMs)) return 'Unknown';
+
+    const diffMs = Math.max(0, now.getTime() - dateMs);
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMinutes / 60);
     const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    return `${Math.floor(diffDays / 7)} week(s) ago`;
+    const exactTime = date.toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    
+    if (diffMinutes < 1) return `Less than a minute ago (${exactTime})`;
+    if (diffMinutes < 60) return `${diffMinutes} min ago (${exactTime})`;
+    if (diffHours < 24) {
+      const mins = diffMinutes % 60;
+      return `${diffHours}h ${mins}m ago (${exactTime})`;
+    }
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago (${exactTime})`;
   };
 
   const getBadge = (percentage) => {

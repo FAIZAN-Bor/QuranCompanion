@@ -30,6 +30,7 @@ const QuidaDetail = ({ route }) => {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [practiceTime, setPracticeTime] = useState(0);
+  const [failedAttemptsCount, setFailedAttemptsCount] = useState(0);
   const timerRef = useRef(null);
   const cardPressAnim = useRef(new Animated.Value(1)).current;
   const referencePlayerRef = useRef(null);
@@ -63,8 +64,7 @@ const QuidaDetail = ({ route }) => {
     || 1;
 
   const getQaidaThreshold = (lessonNo) => {
-    if (lessonNo >= 1 && lessonNo <= 3) return 80;
-    if (lessonNo >= 4 && lessonNo <= 6) return 70;
+    if (lessonNo >= 1 && lessonNo <= 6) return 80;
     return 70;
   };
 
@@ -166,16 +166,22 @@ const QuidaDetail = ({ route }) => {
       }
 
       if (!canMarkDone) {
-        await mistakeService.logMistake({
-          module: 'Qaida',
-          levelId: levelId || `qaida_level_${lessonNumber}`,
-          lessonId: `character_${data.number}`,
-          contentId: data._id || null,
-          mistakeType: 'pronunciation',
-          title: `${currentArabicText || 'Character'} Pronunciation`,
-          description: `Pronunciation accuracy was ${score}% for "${currentMeaningText || 'character'}". Needs practice.`,
-          severity: score < 60 ? 'major' : 'moderate'
-        });
+        const newFailCount = failedAttemptsCount + 1;
+        setFailedAttemptsCount(newFailCount);
+        
+        if (newFailCount >= 5) {
+          await mistakeService.logMistake({
+            module: 'Qaida',
+            levelId: levelId || `qaida_level_${lessonNumber}`,
+            lessonId: `character_${data.number}`,
+            contentId: data._id || null,
+            mistakeType: 'pronunciation',
+            title: `${currentArabicText || 'Character'} Pronunciation`,
+            description: `Pronunciation accuracy was ${score}% for "${currentMeaningText || 'character'}". Needs practice.`,
+            severity: score < 60 ? 'major' : 'moderate'
+          });
+          setFailedAttemptsCount(0); // Reset after logging
+        }
       }
 
       // Navigate to result screen with full analysis

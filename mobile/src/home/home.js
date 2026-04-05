@@ -1,14 +1,67 @@
-import { StyleSheet, Text, View, Image, TouchableOpacity, FlatList, ScrollView, Dimensions, Animated, ActivityIndicator, Alert } from 'react-native';
-import React, { useEffect, useRef, useState } from 'react';
+import { StyleSheet, Text, View, Image, TouchableOpacity, FlatList, ScrollView, Dimensions, Animated, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LineChart, PieChart } from 'react-native-chart-kit';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAuth } from '../context/AuthContext';
+import { useFocusEffect } from '@react-navigation/native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import userService from '../services/userService';
 import progressService from '../services/progressService';
+import quizService from '../services/quizService';
 import achievementService from '../services/achievementService';
 
 const { width: screenWidth } = Dimensions.get('window');
+const QUIZ_PASS_THRESHOLD = 60;
+const HOME_BADGES = [
+  { id: 'badge-qaida-2', levelId: 'qaida_2', title: 'Alphabet Master', emoji: '🅰️' },
+  { id: 'badge-qaida-4', levelId: 'qaida_4', title: 'Takhti Scholar', emoji: '📖' },
+  { id: 'badge-qaida-7', levelId: 'qaida_7', title: 'Qaida Graduate', emoji: '🎓' },
+  { id: 'badge-quran-3', levelId: 'quran_3', title: 'Quran Beginner', emoji: '🌙' },
+  { id: 'badge-quran-7', levelId: 'quran_7', title: 'Quran Champion', emoji: '🏆' },
+];
+
+const normalizeLevelId = (value) => {
+  if (!value) return '';
+  const raw = String(value).toLowerCase();
+  const qaidaMatch = raw.match(/qaida(?:_level)?_(\d+)/);
+  if (qaidaMatch) return `qaida_${Number(qaidaMatch[1])}`;
+
+  const quranMatch = raw.match(/quran_(\d+)/);
+  if (quranMatch) return `quran_${Number(quranMatch[1])}`;
+
+  return raw;
+};
+
+const getLevelIdAliases = (value) => {
+  const aliases = new Set();
+  const raw = String(value || '').toLowerCase();
+  const normalized = normalizeLevelId(raw);
+
+  if (raw) aliases.add(raw);
+  if (normalized) aliases.add(normalized);
+
+  const qaidaMatch = normalized.match(/^qaida_(\d+)$/);
+  if (qaidaMatch) {
+    const n = Number(qaidaMatch[1]);
+    aliases.add(`qaida_${n}`);
+    aliases.add(`qaida_level_${n}`);
+    aliases.add(`quiz_qaida_${n}`);
+    aliases.add(`quiz_qaida_level_${n}`);
+    aliases.add(`qaida_${n}_quiz`);
+    aliases.add(`qaida_level_${n}_quiz`);
+  }
+
+  const quranMatch = normalized.match(/^quran_(\d+)$/);
+  if (quranMatch) {
+    const n = Number(quranMatch[1]);
+    aliases.add(`quran_${n}`);
+    aliases.add(`quiz_quran_${n}`);
+    aliases.add(`quran_${n}_quiz`);
+  }
+
+  return Array.from(aliases);
+};
 
 const Home = ({ navigation }) => {
   const { user } = useAuth();
@@ -35,29 +88,94 @@ const Home = ({ navigation }) => {
   const finalPieDataRef = useRef([1, 1, 1, 1]);
 
   useEffect(() => {
-    fetchDashboard();
+    fetchDashboard(true);
   }, []);
 
-  const fetchDashboard = async () => {
+  useFocusEffect(
+    useCallback(() => {
+      fetchDashboard(false); // Silent refresh when home gains focus
+    }, [])
+  );
+
+  const fetchDashboard = async (isInitial = false) => {
     try {
-      setLoading(true);
+      if (isInitial || !dashboardData) {
+        setLoading(true);
+      }
       
       // Fetch all data in parallel
-      const [dashboardRes, progressRes, coinsRes] = await Promise.all([
+      const [dashboardRes, progressRes, coinsRes, quizRes, achievementsRes] = await Promise.all([
         userService.getDashboard(),
         progressService.getProgressSummary(),
-        achievementService.getCoinStats()
+        achievementService.getCoinStats(),
+        quizService.getQuizResults({}).catch(() => null),
+        achievementService.getAchievements().catch(() => null),
       ]);
       
-      console.log('Dashboard response:', dashboardRes);
-      console.log('Progress response:', progressRes);
-      console.log('Coins response:', coinsRes);
+      // Build map of best quiz score and latest passing time per level alias.
+      const quizList = quizRes?.data?.results || quizRes?.results || [];
+      const bestPctMap = {};
+      const passTimeMap = {};
+
+      quizList.forEach((q) => {
+        const pct = Number(q?.percentage || 0);
+        const passedAtMs = new Date(q?.completedAt || q?.createdAt || q?.updatedAt || 0).getTime();
+        const aliases = new Set(getLevelIdAliases(q?.levelId));
+        const quizId = String(q?.quizId || '').toLowerCase();
+
+        if (quizId) {
+          aliases.add(quizId);
+          const fromQuizId = quizId.replace(/^quiz_/, '').replace(/_quiz$/, '');
+          getLevelIdAliases(fromQuizId).forEach((a) => aliases.add(a));
+        }
+
+        aliases.forEach((alias) => {
+          if (!alias) return;
+          if (!bestPctMap[alias] || pct > bestPctMap[alias]) {
+            bestPctMap[alias] = pct;
+          }
+          if (pct >= QUIZ_PASS_THRESHOLD && Number.isFinite(passedAtMs) && passedAtMs > 0) {
+            if (!passTimeMap[alias] || passedAtMs > passTimeMap[alias]) {
+              passTimeMap[alias] = passedAtMs;
+            }
+          }
+        });
+      });
+
+      const getBestPctForLevel = (levelId) => getLevelIdAliases(levelId).reduce((best, alias) => {
+        const current = Number(bestPctMap[alias] || 0);
+        return current > best ? current : best;
+      }, 0);
+
+      const getLatestPassTimeForLevel = (levelId) => getLevelIdAliases(levelId).reduce((latest, alias) => {
+        const current = Number(passTimeMap[alias] || 0);
+        return current > latest ? current : latest;
+      }, 0);
+
+      const latestMapBadge = HOME_BADGES
+        .map((badge) => ({
+          ...badge,
+          bestPct: getBestPctForLevel(badge.levelId),
+          passedAt: getLatestPassTimeForLevel(badge.levelId),
+        }))
+        .filter((badge) => badge.bestPct >= QUIZ_PASS_THRESHOLD)
+        .sort((a, b) => (b.passedAt || 0) - (a.passedAt || 0))[0];
+
+      // Fallback to latest backend achievement if no map badge is earned yet.
+      const achievements = achievementsRes?.data?.achievements || achievementsRes?.achievements || [];
+      const latestAchievement = achievements
+        .slice()
+        .sort((a, b) => new Date(b?.earnedAt || 0).getTime() - new Date(a?.earnedAt || 0).getTime())[0];
+      const earnedBadgeName = latestMapBadge?.title || latestAchievement?.title || user?.proficiencyLevel || 'Beginner';
+      const earnedBadgeEmoji = latestMapBadge?.emoji || '🏅';
       
       // Set dashboard data
       setDashboardData({
         ...dashboardRes.data,
         progress: progressRes.data?.summary || progressRes.summary || {},
-        coins: coinsRes.data || coinsRes
+        coins: coinsRes.data || coinsRes,
+        earnedBadgeName,
+        earnedBadgeEmoji,
       });
       
       // Update chart data if available from progress
@@ -184,9 +302,10 @@ const Home = ({ navigation }) => {
     },
     { 
       id: 2, 
-      title: 'Your Level', 
-      value: dashboardData?.progress?.currentLevel || user?.currentLevel || 'Beginner', 
-      image: require('../assests/volume.png') 
+      title: 'Your Badge', 
+      value: dashboardData?.earnedBadgeEmoji || '🏅',
+      subtitle: dashboardData?.earnedBadgeName || user?.proficiencyLevel || 'Beginner',
+      hideIcon: true,
     },
     { 
       id: 3, 
@@ -206,8 +325,14 @@ const Home = ({ navigation }) => {
       ) : (
         <ScrollView 
           contentContainerStyle={{ paddingBottom: 40 }}
-          refreshing={refreshing}
-          onRefresh={onRefresh}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#0A7D4F', '#15B872']} 
+              tintColor="#0A7D4F"
+            />
+          }
         >
         {/* Profile Section */}
         <LinearGradient
@@ -262,9 +387,17 @@ const Home = ({ navigation }) => {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cardsContainer}>
           {dashboardCards.map((card) => (
             <LinearGradient key={card.id} colors={['#FFFFFF', '#E8F5E9']} style={styles.metricCard}>
-              <Image source={card.image} style={styles.cardIcon} />
-              <Text style={styles.cardTitle}>{card.title}</Text>
-              <Text style={styles.cardValue}>{card.value}</Text>
+              {card.hideIcon ? (
+                <Text style={styles.badgeEmojiValue}>{card.value}</Text>
+              ) : (
+                <Image source={card.image} style={styles.cardIcon} />
+              )}
+              {!card.hideIcon && <Text style={styles.cardTitle}>{card.title}</Text>}
+              {card.hideIcon ? (
+                <Text style={styles.cardSubtitle}>{card.subtitle}</Text>
+              ) : (
+                <Text style={styles.cardValue}>{card.value}</Text>
+              )}
             </LinearGradient>
           ))}
         </ScrollView>
@@ -330,7 +463,7 @@ const Home = ({ navigation }) => {
                 <Text style={styles.continueSubtitle}>🚀 View your learning journey</Text>
               </View>
               <View style={styles.continueArrow}>
-                <Text style={styles.continueArrowText}>→</Text>
+                <Icon name="arrow-forward" size={24} color="#FFF" />
               </View>
             </View>
           </LinearGradient>
@@ -564,6 +697,17 @@ const styles = StyleSheet.create({
   cardIcon: { width: 45, height: 45, marginBottom: 12, resizeMode: 'contain', tintColor: '#0A7D4F' },
   cardTitle: { fontSize: 13, color: '#666', fontWeight: '700' },
   cardValue: { fontSize: 22, fontWeight: '900', color: '#0A7D4F', marginTop: 8 },
+  badgeEmojiValue: {
+    fontSize: 40,
+    marginBottom: 8,
+  },
+  cardSubtitle: {
+    fontSize: 12,
+    color: '#0A7D4F',
+    fontWeight: '700',
+    marginTop: 8,
+    textAlign: 'center',
+  },
 
   profileContainer: {
     flexDirection: 'row',

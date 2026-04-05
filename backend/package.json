@@ -7,6 +7,7 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "test": "jest",
+    "seed:quizzes": "node scripts/seedQuizzes.js",
     "seed:quran": "node src/scripts/seedQuranContent.js",
     "seed:qaida1": "node src/scripts/seedQaidaTakhti1.js",
     "seed:qaida2": "node src/scripts/seedQaidaTakhti2.js",

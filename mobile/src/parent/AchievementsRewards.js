@@ -3,6 +3,77 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-nat
 import LinearGradient from 'react-native-linear-gradient';
 import parentService from '../services/parentService';
 
+const QUIZ_PASS_THRESHOLD = 60;
+const MAP_BADGES = [
+  { id: 'badge-qaida-2', module: 'Qaida', afterLevel: 2, icon: '🅰️', title: 'Alphabet Master', description: 'Passed Qaida Level 2 quiz.' },
+  { id: 'badge-qaida-4', module: 'Qaida', afterLevel: 4, icon: '📖', title: 'Takhti Scholar', description: 'Passed Qaida Level 4 quiz.' },
+  { id: 'badge-qaida-7', module: 'Qaida', afterLevel: 7, icon: '🎓', title: 'Qaida Graduate', description: 'Passed Qaida Level 7 quiz.' },
+  { id: 'badge-quran-3', module: 'Quran', afterLevel: 3, icon: '🌙', title: 'Quran Beginner', description: 'Passed Quran Level 3 quiz.' },
+  { id: 'badge-quran-7', module: 'Quran', afterLevel: 7, icon: '🏆', title: 'Quran Champion', description: 'Passed Quran Level 7 quiz.' },
+];
+
+const normalizeLevelId = (value) => {
+  const raw = String(value || '').toLowerCase();
+  const match = raw.match(/(qaida|quran|dua)(?:_level)?_(\d+)/);
+  if (!match) return raw;
+  return `${match[1]}_${Number(match[2])}`;
+};
+
+const getLevelIdAliases = (value) => {
+  const raw = String(value || '').toLowerCase();
+  const normalized = normalizeLevelId(raw);
+  const aliases = new Set([raw, normalized].filter(Boolean));
+
+  const match = normalized.match(/^(qaida|quran)_(\d+)$/);
+  if (match) {
+    const module = match[1];
+    const level = Number(match[2]);
+    aliases.add(`${module}_${level}`);
+    aliases.add(`${module}_level_${level}`);
+    aliases.add(`quiz_${module}_${level}`);
+    aliases.add(`${module}_${level}_quiz`);
+    aliases.add(`quiz_${module}_level_${level}`);
+    aliases.add(`${module}_level_${level}_quiz`);
+  }
+
+  return Array.from(aliases);
+};
+
+const getMapBadgesFromQuizzes = (quizzes = []) => {
+  const badgePassTimes = {};
+
+  quizzes.forEach((quiz) => {
+    const percentage = Number(quiz?.percentage || 0);
+    if (percentage < QUIZ_PASS_THRESHOLD) return;
+
+    const completedAtMs = new Date(quiz?.completedAt || quiz?.createdAt || quiz?.updatedAt || 0).getTime();
+    if (!Number.isFinite(completedAtMs) || completedAtMs <= 0) return;
+
+    const aliases = new Set();
+    getLevelIdAliases(quiz?.levelId).forEach((a) => aliases.add(a));
+
+    const quizId = String(quiz?.quizId || '').toLowerCase();
+    if (quizId) {
+      aliases.add(quizId);
+      const fromQuizId = quizId.replace(/^quiz_/, '').replace(/_quiz$/, '');
+      getLevelIdAliases(fromQuizId).forEach((a) => aliases.add(a));
+    }
+
+    MAP_BADGES.forEach((badge) => {
+      const levelKey = `${badge.module.toLowerCase()}_${badge.afterLevel}`;
+      if (aliases.has(levelKey)) {
+        const prev = badgePassTimes[badge.id] || 0;
+        if (completedAtMs > prev) badgePassTimes[badge.id] = completedAtMs;
+      }
+    });
+  });
+
+  return MAP_BADGES
+    .map((badge) => ({ ...badge, earnedAtMs: badgePassTimes[badge.id] || 0 }))
+    .filter((badge) => badge.earnedAtMs > 0)
+    .sort((a, b) => b.earnedAtMs - a.earnedAtMs);
+};
+
 const AchievementsRewards = ({ route }) => {
   const { child } = route.params || { child: { name: 'Child' } };
   const [achievements, setAchievements] = useState([]);
@@ -45,18 +116,44 @@ const AchievementsRewards = ({ route }) => {
     if (!child?._id) return;
     try {
       setLoading(true);
-      const response = await parentService.getChildAchievements(child._id);
-      if (response.success && response.data?.achievements) {
-        const formattedAchievements = response.data.achievements.map((achievement, index) => ({
+      const [achievementsRes, quizzesRes] = await Promise.all([
+        parentService.getChildAchievements(child._id),
+        parentService.getChildQuizzes(child._id),
+      ]);
+
+      const backendAchievements = achievementsRes?.data?.achievements || [];
+      const quizzes = quizzesRes?.data?.quizzes || [];
+
+      const formattedBackend = backendAchievements.map((achievement, index) => ({
           id: achievement._id || index,
-          icon: achievementStyles[achievement.type]?.icon || '🏅',
+          icon: achievementStyles[achievement.badgeType]?.icon || '🏅',
           title: achievement.title,
           description: achievement.description,
           dateEarned: formatDate(achievement.earnedAt),
-          color: achievementStyles[achievement.type]?.color || ['#0A7D4F', '#087F4F'],
+          color: achievementStyles[achievement.badgeType]?.color || ['#0A7D4F', '#087F4F'],
+          earnedAtMs: new Date(achievement.earnedAt || achievement.createdAt || 0).getTime() || 0,
         }));
-        setAchievements(formattedAchievements);
-      }
+
+      const formattedDerived = getMapBadgesFromQuizzes(quizzes).map((badge) => ({
+        id: `derived-${badge.id}`,
+        icon: badge.icon,
+        title: badge.title,
+        description: badge.description,
+        dateEarned: formatDate(badge.earnedAtMs),
+        color: ['#F59E0B', '#D97706'],
+        earnedAtMs: badge.earnedAtMs,
+      }));
+
+      const seenTitles = new Set();
+      const merged = [...formattedDerived, ...formattedBackend].filter((item) => {
+        const key = String(item.title || '').toLowerCase();
+        if (!key || seenTitles.has(key)) return false;
+        seenTitles.add(key);
+        return true;
+      });
+
+      merged.sort((a, b) => (b.earnedAtMs || 0) - (a.earnedAtMs || 0));
+      setAchievements(merged);
     } catch (err) {
       console.error('Error fetching achievements:', err);
       setError('Failed to load achievements');
@@ -130,54 +227,6 @@ const AchievementsRewards = ({ route }) => {
             ))}
           </View>
           )}
-        </View>
-
-        {/* Upcoming Achievements */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Coming Soon</Text>
-          <LinearGradient
-            colors={['#FFFFFF', '#F1F8E9']}
-            style={styles.upcomingCard}
-          >
-            <Text style={styles.upcomingIcon}>🎓</Text>
-            <Text style={styles.upcomingTitle}>Quran Expert</Text>
-            <Text style={styles.upcomingDescription}>
-              Complete 10 Surahs with 95%+ accuracy
-            </Text>
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBar}>
-                <LinearGradient
-                  colors={['#0A7D4F', '#15B872']}
-                  style={[styles.progressFill, { width: '40%' }]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                />
-              </View>
-              <Text style={styles.progressText}>4/10 completed</Text>
-            </View>
-          </LinearGradient>
-
-          <LinearGradient
-            colors={['#FFFFFF', '#F1F8E9']}
-            style={styles.upcomingCard}
-          >
-            <Text style={styles.upcomingIcon}>💯</Text>
-            <Text style={styles.upcomingTitle}>Perfect Week</Text>
-            <Text style={styles.upcomingDescription}>
-              Practice every day for 30 days
-            </Text>
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBar}>
-                <LinearGradient
-                  colors={['#E53935', '#D32F2F']}
-                  style={[styles.progressFill, { width: '70%' }]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                />
-              </View>
-              <Text style={styles.progressText}>21/30 days</Text>
-            </View>
-          </LinearGradient>
         </View>
 
       </ScrollView>
@@ -320,54 +369,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#FFFFFF',
     fontWeight: '800',
-  },
-  upcomingCard: {
-    borderRadius: 15,
-    padding: 20,
-    marginBottom: 15,
-    elevation: 6,
-    shadowColor: '#0A7D4F',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    alignItems: 'center',
-  },
-  upcomingIcon: {
-    fontSize: 48,
-    marginBottom: 12,
-  },
-  upcomingTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#0A7D4F',
-    marginBottom: 8,
-  },
-  upcomingDescription: {
-    fontSize: 13,
-    color: '#666',
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 15,
-  },
-  progressContainer: {
-    width: '100%',
-  },
-  progressBar: {
-    height: 10,
-    backgroundColor: '#E8F5E9',
-    borderRadius: 5,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 5,
-  },
-  progressText: {
-    fontSize: 12,
-    color: '#0A7D4F',
-    fontWeight: '700',
-    textAlign: 'center',
   },
 });
 

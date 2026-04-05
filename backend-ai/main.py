@@ -3,14 +3,24 @@ from fastapi.middleware.cors import CORSMiddleware
 import tempfile
 import os
 import sys
+from urllib.parse import urlparse
 
-# FORCE ADD FFMPEG TO PATH
-ffmpeg_path = r"C:\Users\M. Faizan\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1-full_build\bin"
-if os.path.exists(ffmpeg_path):
-    os.environ["PATH"] += os.pathsep + ffmpeg_path
-    print(f"Added FFmpeg to PATH: {ffmpeg_path}")
+import shutil
+
+# FORCE ADD FFMPEG TO PATH (If not already present)
+# Since you added it to your system PATH, we can just check if it exists:
+if not shutil.which("ffmpeg"):
+    # Fallback to the known local profile path if Uvicorn didn't load the system PATH
+    local_appdata = os.environ.get("LOCALAPPDATA", r"C:\Users\ullah\AppData\Local")
+    ffmpeg_path = os.path.join(local_appdata, r"Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0.1-full_build\bin")
+    
+    if os.path.exists(ffmpeg_path):
+        os.environ["PATH"] += os.pathsep + ffmpeg_path
+        print(f"Added FFmpeg to PATH fallback: {ffmpeg_path}")
+    else:
+        print(f"WARNING: FFmpeg not found in PATH or at {ffmpeg_path}")
 else:
-    print(f"WARNING: FFmpeg path not found: {ffmpeg_path}")
+    print("FFmpeg found securely mapped in System PATH.")
 
 from processor import transcribe_audio, extract_mfcc, compare_with_reference, compare_words_with_reference, get_reference_word_timestamps
 from alignment import get_word_timestamps
@@ -59,6 +69,12 @@ async def analyze_recitation(
         Analysis results including transcription, accuracy, and Tajweed feedback
     """
     try:
+        module_lower = str(module or "").strip().lower()
+        is_qaida = module_lower == "qaida"
+        is_qaida_1_to_3 = is_qaida and 1 <= lesson_number <= 3
+        is_qaida_4_to_6 = is_qaida and 4 <= lesson_number <= 6
+        is_qaida_1_to_6 = is_qaida and 1 <= lesson_number <= 6
+
         # Read uploaded bytes first so we can detect the real format
         content = await audio.read()
 
@@ -87,10 +103,8 @@ async def analyze_recitation(
         try:
             import librosa
             
-            # OPTIMIZATION: Stop using Whisper on Qaida 1-6!
-            # Isolated sounds (Lessons 1-3) and short combinations (Lessons 4-6) are notoriously bad for STT models.
-            # Using Whisper here causes false penalties and adds a massive 3-5 seconds of delay.
-            if module.lower() == 'qaida' and lesson_number <= 6:
+            # Policy: Do not use Whisper STT for Qaida levels 1-6.
+            if is_qaida_1_to_6:
                 print(f"Qaida {lesson_number} detected. Bypassing Whisper STT. Assuming Text is perfect.")
                 audio_dur = librosa.get_duration(path=temp_audio_path)
                 recognized_text = ground_truth
@@ -132,6 +146,28 @@ async def analyze_recitation(
             if reference_audio_url:
                 reference_path = None
                 downloaded_ref_file = None
+                possible_paths = []
+
+                parsed_url = urlparse(reference_audio_url)
+                basename_from_url = os.path.basename(parsed_url.path or "")
+
+                # Build local fallback candidates up-front so they exist in all branches.
+                if not reference_audio_url.startswith("http://") and not reference_audio_url.startswith("https://"):
+                    possible_paths.extend([
+                        reference_audio_url,
+                        reference_audio_url.lstrip('/'),
+                        reference_audio_url.replace('/', os.sep),
+                    ])
+
+                if basename_from_url:
+                    possible_paths.extend([
+                        os.path.join('uploads', basename_from_url),
+                        os.path.join('..', 'backend', 'uploads', basename_from_url),
+                    ])
+
+                # Include backend-relative fallback for absolute-like /uploads/... paths.
+                possible_paths.append(os.path.join('..', 'backend', reference_audio_url.lstrip('/')))
+                possible_paths = list(dict.fromkeys([p for p in possible_paths if p]))
 
                 # Check if it's an external URL
                 if reference_audio_url.startswith("http://") or reference_audio_url.startswith("https://"):
@@ -151,22 +187,12 @@ async def analyze_recitation(
                         downloaded_ref_file = temp_ref.name
                     except Exception as e:
                         print(f"Failed to download reference audio: {e}")
+                        # Continue with local fallback below.
                         
-                else:
-                    # It's a local path
-                    possible_paths = [
-                        reference_audio_url,
-                        reference_audio_url.lstrip('/'),
-                        os.path.join('uploads', os.path.basename(reference_audio_url)),
-                        reference_audio_url.replace('/', os.sep),
-                        # For local development - backend uploads folder
-                        os.path.join('..', 'backend', 'uploads', os.path.basename(reference_audio_url)),
-                        os.path.join('..', 'backend', reference_audio_url.lstrip('/')),
-                    ]
-                    
+                if not reference_path:
                     print(f"Looking for local reference audio. URL: {reference_audio_url}")
                     print(f"Trying paths: {possible_paths}")
-                    
+
                     for path in possible_paths:
                         if os.path.exists(path):
                             reference_path = path
@@ -175,8 +201,8 @@ async def analyze_recitation(
                 if reference_path:
                     print(f"Found reference audio at: {reference_path}")
                     
-                    # OPTIMIZATION: Bypassing Whisper on Qari Reference audio for Qaida 1-6
-                    if module.lower() == 'qaida' and lesson_number <= 6:
+                    # Policy: Do not use Whisper timestamps for Qaida 1-6.
+                    if is_qaida_1_to_6:
                         import librosa
                         ref_dur = librosa.get_duration(path=reference_path)
                         reference_word_timestamps = [{
@@ -211,12 +237,15 @@ async def analyze_recitation(
                     overall_pronunciation = compare_with_reference(temp_audio_path, reference_path)
                     print(f"Word-level avg: {pronunciation_score:.2f}%, Full audio: {overall_pronunciation:.2f}%")
                     
-                    # For isolated letters, text alignment is meaningless. Use raw audio-to-audio phonetic comparison.
-                    if module.lower() == 'qaida' and lesson_number <= 3:
+                    # Policy: Qaida 1-3 accuracy based on pronunciation model.
+                    if is_qaida_1_to_3:
                         print("Qaida 1-3 detected: Overriding piece-meal score with Full Audio DTW comparison.")
                         pronunciation_score = overall_pronunciation
                 else:
-                    print(f"Reference audio not found. Tried: {possible_paths}")
+                    if possible_paths:
+                        print(f"Reference audio not found. Tried: {possible_paths}")
+                    else:
+                        print("Reference audio not found. No local fallback paths were available.")
             
             # Step 6: Analyze Tajweed rules (Now using Qari reference timestamps for Smarter Duration checks!)
             tajweed_analysis = analyze_tajweed(temp_audio_path, aligned_words, ground_truth, reference_word_timestamps)
@@ -233,18 +262,15 @@ async def analyze_recitation(
             # Based on the module and lesson number (Qaida lessons need different weights)
             text_accuracy = max(0, 100 - wer_result["wer"])
             
-            # Dynamic weighting system for Qaida lessons:
-            #   Lessons 1-3 (Alphabet/Vowels/Tanween): Pure Wav2Vec2 (Whisper fails on isolated sounds)
-            #   Lessons 4-6 (Shaddah/Sukoon/Madd): Pronunciation + Tajweed duration checks
-            #   Lessons 7+  (Words/Joinings): Standard formula (Whisper works on real words)
-            if module == "Qaida" and 1 <= lesson_number <= 3:
-                # Pure pronunciation comparison — ignore Whisper text completely
+            # Scoring policy requested by user:
+            # Qaida 1-3 -> Pronunciation only
+            # Qaida 4-6 -> Pronunciation + Tajweed
+            # Qaida 7+ / Quran -> Text + Pronunciation + Tajweed
+            if is_qaida_1_to_3:
                 text_weight, pron_weight, tajweed_weight = 0.0, 1.0, 0.0
-            elif module == "Qaida" and 4 <= lesson_number <= 6:
-                # Pronunciation + Tajweed (Shaddah duration, Madd elongation, Sukoon bounce)
+            elif is_qaida_4_to_6:
                 text_weight, pron_weight, tajweed_weight = 0.0, 0.6, 0.4
             else:
-                # Standard formula for Quran ayat and Qaida Lessons 7+
                 text_weight, pron_weight, tajweed_weight = 0.5, 0.3, 0.2
             
             overall_accuracy = (
@@ -333,7 +359,7 @@ async def analyze_recitation(
                 },
                 "step_7_scoring": {
                     "title": "Accuracy Calculation",
-                    "formula": "(Text * 0.5) + (Pronunciation * 0.3) + (Tajweed * 0.2)",
+                    "formula": f"(Text * {text_weight}) + (Pronunciation * {pron_weight}) + (Tajweed * {tajweed_weight})",
                     "text_accuracy": round(text_accuracy, 2),
                     "pronunciation_accuracy": round(pronunciation_score, 2),
                     "tajweed_accuracy": round(tajweed_analysis["overall_score"], 2),
@@ -345,6 +371,7 @@ async def analyze_recitation(
                 "pipeline_steps": pipeline_steps,
                 "recognized_text": recognized_text,
                 "ground_truth": ground_truth,
+                "text_accuracy": round(text_accuracy, 2),
                 "accuracy_score": round(overall_accuracy, 2),
                 "word_error_rate": round(wer_result["wer"], 2),
                 "pronunciation_score": round(pronunciation_score, 2),
@@ -353,11 +380,14 @@ async def analyze_recitation(
                     "maddScore": tajweed_analysis["madd_score"],
                     "ghunnahScore": tajweed_analysis["ghunnah_score"],
                     "shaddahScore": tajweed_analysis["shaddah_score"],
+                    "heavyLetterScore": tajweed_analysis.get("heavy_letter_score"),
                     "idghamScore": tajweed_analysis.get("idgham_score", 100),
                     "ikhfaScore": tajweed_analysis.get("ikhfa_score", 100),
                     "iqlabScore": tajweed_analysis.get("iqlab_score", 100),
                     "izharScore": tajweed_analysis.get("izhar_score", 100),
                     "qalqalahScore": tajweed_analysis.get("qalqalah_score", 100),
+                    "rule_totals": tajweed_analysis.get("rule_totals", {}),
+                    "detailed_rules": tajweed_analysis.get("detailed_rules", {}),
                     "overall_score": tajweed_analysis["overall_score"]
                 },
                 "word_timestamps": aligned_words,

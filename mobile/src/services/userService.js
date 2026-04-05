@@ -55,6 +55,16 @@ class UserService {
     }
   }
 
+  // Delete user account and related data
+  async deleteAccount() {
+    try {
+      const response = await api.delete('/users/account');
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
   // Handle errors
   handleError(error) {
     if (error.response) {

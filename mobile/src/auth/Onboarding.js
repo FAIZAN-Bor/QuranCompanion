@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View, Image, TouchableOpacity } from 'react-native';
 import AppIntroSlider from 'react-native-app-intro-slider';
 import LinearGradient from 'react-native-linear-gradient';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 const slides = [
   {
@@ -55,7 +56,10 @@ const Onboarding = ({ navigation }) => {
       start={{x: 0, y: 0}}
       end={{x: 1, y: 0}}
     >
-      <Text style={styles.buttonText}>Next →</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Text style={styles.buttonText}>Next</Text>
+        <Icon name="arrow-forward" size={18} color="#FFF" style={{ marginLeft: 6 }} />
+      </View>
     </LinearGradient>
   );
 
@@ -72,7 +76,10 @@ const Onboarding = ({ navigation }) => {
       start={{x: 0, y: 0}}
       end={{x: 1, y: 0}}
     >
-      <Text style={styles.buttonText}>Get Started ✓</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Text style={styles.buttonText}>Get Started</Text>
+        <Icon name="checkmark" size={18} color="#FFF" style={{ marginLeft: 6 }} />
+      </View>
     </LinearGradient>
   );
 

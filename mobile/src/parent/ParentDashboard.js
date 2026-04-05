@@ -15,14 +15,78 @@ const quickAccessItems = [
   { id: 6, title: 'Activity Timeline', icon: require('../assests/ActivitTimeline.png'), screen: 'Activity', isTab: true, color: '#26C6DA' },
 ];
 
+const QUIZ_PASS_THRESHOLD = 60;
+const MAP_BADGES = [
+  { id: 'badge-qaida-2', levelId: 'qaida_2', emoji: '🅰️', title: 'Alphabet Master' },
+  { id: 'badge-qaida-4', levelId: 'qaida_4', emoji: '📖', title: 'Takhti Scholar' },
+  { id: 'badge-qaida-7', levelId: 'qaida_7', emoji: '🎓', title: 'Qaida Graduate' },
+  { id: 'badge-quran-3', levelId: 'quran_3', emoji: '🌙', title: 'Quran Beginner' },
+  { id: 'badge-quran-7', levelId: 'quran_7', emoji: '🏆', title: 'Quran Champion' },
+];
+
+const normalizeLevelId = (value) => {
+  if (!value) return '';
+  const raw = String(value).toLowerCase();
+  const qaidaMatch = raw.match(/qaida(?:_level)?_(\d+)/);
+  if (qaidaMatch) return `qaida_${Number(qaidaMatch[1])}`;
+
+  const quranMatch = raw.match(/quran_(\d+)/);
+  if (quranMatch) return `quran_${Number(quranMatch[1])}`;
+
+  const duaMatch = raw.match(/dua_(\d+)/);
+  if (duaMatch) return `dua_${Number(duaMatch[1])}`;
+
+  return raw;
+};
+
+const getLevelIdAliases = (value) => {
+  const aliases = new Set();
+  const raw = String(value || '').toLowerCase();
+  const normalized = normalizeLevelId(raw);
+
+  if (raw) aliases.add(raw);
+  if (normalized) aliases.add(normalized);
+
+  const qaidaMatch = normalized.match(/^qaida_(\d+)$/);
+  if (qaidaMatch) {
+    const n = Number(qaidaMatch[1]);
+    aliases.add(`qaida_${n}`);
+    aliases.add(`qaida_level_${n}`);
+    aliases.add(`quiz_qaida_${n}`);
+    aliases.add(`quiz_qaida_level_${n}`);
+    aliases.add(`qaida_${n}_quiz`);
+    aliases.add(`qaida_level_${n}_quiz`);
+  }
+
+  const quranMatch = normalized.match(/^quran_(\d+)$/);
+  if (quranMatch) {
+    const n = Number(quranMatch[1]);
+    aliases.add(`quran_${n}`);
+    aliases.add(`quiz_quran_${n}`);
+    aliases.add(`quran_${n}_quiz`);
+  }
+
+  return Array.from(aliases);
+};
+
 const ParentDashboard = () => {
   const navigation = useNavigation();
   const { user } = useAuth();
   const [children, setChildren] = useState([]);
   const [selectedChild, setSelectedChild] = useState(null);
   const [childStats, setChildStats] = useState(null);
+  const [childSummaryMap, setChildSummaryMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowMs(Date.now());
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     fetchChildren();
@@ -30,9 +94,37 @@ const ParentDashboard = () => {
 
   useEffect(() => {
     if (selectedChild) {
+      setChildStats(null);
       fetchChildStats(selectedChild.child._id);
     }
   }, [selectedChild]);
+
+  const fetchChildrenSummaries = async (childLinks = []) => {
+    try {
+      const summaryEntries = await Promise.all(
+        childLinks.map(async (childLink) => {
+          try {
+            const childId = childLink?.child?._id;
+            if (!childId) return null;
+            const response = await parentService.getChildProgress(childId);
+            return [childId, response?.data?.summary || null];
+          } catch (_) {
+            return null;
+          }
+        })
+      );
+
+      const nextMap = {};
+      summaryEntries.forEach((entry) => {
+        if (entry && entry[0] && entry[1]) {
+          nextMap[entry[0]] = entry[1];
+        }
+      });
+      setChildSummaryMap(nextMap);
+    } catch (error) {
+      console.error('Error fetching children summaries:', error);
+    }
+  };
 
   const fetchChildren = async () => {
     try {
@@ -42,6 +134,7 @@ const ParentDashboard = () => {
       if (response.success && response.data.children.length > 0) {
         setChildren(response.data.children);
         setSelectedChild(response.data.children[0]);
+        fetchChildrenSummaries(response.data.children);
         // Log profile images for debugging
         response.data.children.forEach(childLink => {
           console.log(`Child ${childLink.child.name} profileImage:`, childLink.child.profileImage);
@@ -76,12 +169,17 @@ const ParentDashboard = () => {
 
   const handleQuickAccessPress = (item) => {
     if (!selectedChild) return;
+
+    const selectedSummary =
+      childStats?.progress?.summary ||
+      childSummaryMap[selectedChild?.child?._id] ||
+      null;
     
     const childData = {
       _id: selectedChild.child._id,
       name: selectedChild.child.name,
       email: selectedChild.child.email,
-      progress: selectedChild.child.accuracy || 0,
+      progress: Math.round(selectedSummary?.accuracy ?? selectedChild.child.accuracy ?? 0),
       level: selectedChild.child.currentLevel || 'Beginner',
       coins: selectedChild.child.coins || 0,
       streakDays: selectedChild.child.streakDays || 0
@@ -95,23 +193,77 @@ const ParentDashboard = () => {
   };
 
   const getLastActive = (lastActiveDate) => {
-    if (!lastActiveDate) return 'Unknown';
-    const now = new Date();
+    if (!lastActiveDate) return 'No activity yet';
+    const now = new Date(nowMs);
     const lastActive = new Date(lastActiveDate);
-    const diffMs = now - lastActive;
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    
-    if (diffHours < 1) return 'Just now';
-    if (diffHours < 24) return `${diffHours} hours ago`;
+    const lastActiveMs = lastActive.getTime();
+    if (!Number.isFinite(lastActiveMs)) return 'No activity yet';
+
+    const diffMs = Math.max(0, now.getTime() - lastActiveMs);
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMinutes / 60);
     const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    const exactTime = lastActive.toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    
+    if (diffMinutes < 1) return `Less than a minute ago (${exactTime})`;
+    if (diffMinutes < 60) return `${diffMinutes} min ago (${exactTime})`;
+    if (diffHours < 24) {
+      const minutesPart = diffMinutes % 60;
+      return `${diffHours}h ${minutesPart}m ago (${exactTime})`;
+    }
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago (${exactTime})`;
   };
 
-  const getLatestAchievement = () => {
-    if (!childStats?.achievements || childStats.achievements.length === 0) {
-      return 'No badges yet';
-    }
-    return childStats.achievements[0].title;
+  const getLatestMapBadge = () => {
+    const quizResults = childStats?.quizzes || [];
+    if (!quizResults.length) return null;
+
+    const badgePassTimes = {};
+
+    quizResults.forEach((quiz) => {
+      const percentage = Number(quiz?.percentage || 0);
+      if (percentage < QUIZ_PASS_THRESHOLD) return;
+
+      const completedAtMs = new Date(quiz?.completedAt || quiz?.createdAt || 0).getTime();
+      const aliases = new Set();
+      getLevelIdAliases(quiz?.levelId).forEach((alias) => aliases.add(alias));
+
+      const quizId = String(quiz?.quizId || '').toLowerCase();
+      if (quizId) {
+        aliases.add(quizId);
+        const fromQuizId = quizId.replace(/^quiz_/, '').replace(/_quiz$/, '');
+        getLevelIdAliases(fromQuizId).forEach((alias) => aliases.add(alias));
+      }
+
+      MAP_BADGES.forEach((badge) => {
+        if (aliases.has(badge.levelId)) {
+          const prev = badgePassTimes[badge.id] || 0;
+          if (completedAtMs > prev) {
+            badgePassTimes[badge.id] = completedAtMs;
+          }
+        }
+      });
+    });
+
+    const earnedBadges = MAP_BADGES
+      .map((badge) => ({ ...badge, earnedAt: badgePassTimes[badge.id] || 0 }))
+      .filter((badge) => badge.earnedAt > 0)
+      .sort((a, b) => b.earnedAt - a.earnedAt);
+
+    if (earnedBadges.length) return earnedBadges[0];
+
+    const latestAchievement = childStats?.achievements?.[0] || null;
+    if (!latestAchievement) return null;
+
+    return {
+      emoji: '🏅',
+      title: latestAchievement.title || 'Badge Earned',
+    };
   };
 
   const getTotalMistakes = () => {
@@ -136,12 +288,23 @@ const ParentDashboard = () => {
       return 'No recent activity';
     }
     const inProgress = childStats.progress.progress.find(p => p.status === 'in_progress');
-    if (inProgress) {
-      return `${inProgress.module} - ${inProgress.lessonId}`;
+    const activeProgress = inProgress || childStats.progress.progress[0];
+    const levelId = String(activeProgress?.levelId || '').toLowerCase();
+    const levelMatch = levelId.match(/(qaida|quran|dua)(?:_level)?_(\d+)/);
+
+    if (levelMatch) {
+      const moduleName = levelMatch[1].charAt(0).toUpperCase() + levelMatch[1].slice(1);
+      return `${moduleName} Level ${Number(levelMatch[2])}`;
     }
-    const latest = childStats.progress.progress[0];
-    return `${latest.module} - ${latest.lessonId}`;
+
+    if (activeProgress?.module) {
+      return `${activeProgress.module} Lesson`;
+    }
+
+    return 'No recent activity';
   };
+
+  const latestBadge = getLatestMapBadge();
 
   if (loading) {
     return (
@@ -217,8 +380,9 @@ const ParentDashboard = () => {
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.childList}>
             {children.map((childLink) => {
-              // Always use the User model accuracy for consistency across all child cards
-              const accuracyValue = Math.round(childLink.child.accuracy || 0);
+              const childId = childLink?.child?._id;
+              const summaryAccuracy = childSummaryMap[childId]?.accuracy;
+              const accuracyValue = Math.round(summaryAccuracy ?? childLink?.child?.accuracy ?? 0);
               
               return (
                 <TouchableOpacity
@@ -293,8 +457,8 @@ const ParentDashboard = () => {
             </LinearGradient>
 
             <LinearGradient colors={['#FFFFFF', '#FFF9C4']} style={styles.statCard}>
-              <Text style={styles.statValue}>🏆</Text>
-              <Text style={styles.statLabel} numberOfLines={2}>{getLatestAchievement()}</Text>
+              <Text style={styles.statValue}>{latestBadge?.emoji || '🏆'}</Text>
+              <Text style={styles.statLabel} numberOfLines={2}>{latestBadge?.title || 'No badges yet'}</Text>
             </LinearGradient>
           </View>
         </View>
@@ -308,7 +472,7 @@ const ParentDashboard = () => {
           >
             <Text style={styles.activityTitle}>{selectedChild?.child.name} is learning:</Text>
             <Text style={styles.activityContent}>{getCurrentActivity()}</Text>
-            <Text style={styles.activityTime}>Last active: {getLastActive(selectedChild?.child.lastActiveDate)}</Text>
+            <Text style={styles.activityTime}>Last active: {getLastActive(childStats?.progress?.summary?.lastActivity || childSummaryMap[selectedChild?.child?._id]?.lastActivity || selectedChild?.child?.lastActiveDate)}</Text>
           </LinearGradient>
         </View>
 

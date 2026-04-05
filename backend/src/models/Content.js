@@ -128,12 +128,12 @@ contentSchema.index({ tags: 1 });
 contentSchema.index({ difficulty: 1 });
 
 // Static method to get content by type
-contentSchema.statics.getByType = async function (type, filters = {}) {
+contentSchema.statics.getByType = async function (type, filters = {}, selectFields = {}) {
   return await this.find({
     type,
     isActive: true,
     ...filters
-  }).sort({ order: 1, number: 1 });
+  }).select(selectFields).sort({ order: 1, number: 1 });
 };
 
 module.exports = mongoose.model('Content', contentSchema);

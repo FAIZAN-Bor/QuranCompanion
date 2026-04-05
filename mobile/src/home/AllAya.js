@@ -4,6 +4,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import Video from 'react-native-video';
 import { useFocusEffect } from '@react-navigation/native';
 import contentService from '../services/contentService';
+import progressService from '../services/progressService';
 
 const AllAya = ({ navigation, route }) => {
   const initialSurah = route.params.data; // The selected Surah object
@@ -14,26 +15,69 @@ const AllAya = ({ navigation, route }) => {
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [isReferenceLoading, setIsReferenceLoading] = useState(false);
   const [loadingAudioUrl, setLoadingAudioUrl] = useState(null);
+  const [completedAyahIds, setCompletedAyahIds] = useState(new Set());
   const ayahs = Array.isArray(surahData?.ayahs)
     ? surahData.ayahs
     : (Array.isArray(surahData?.verses) ? surahData.verses : []);
 
+  const getSurahLevelAliases = (surah) => {
+    const aliases = new Set();
+    const surahNumber = Number(surah?.number || initialSurah?.number || 0);
+    if (surah?._id) aliases.add(String(surah._id).toLowerCase());
+    if (surahNumber) aliases.add(`surah_${surahNumber}`);
+    return aliases;
+  };
+
+  const getAyahLessonId = (item, index) => `ayah_${getAyahNumber(item, index)}`;
+
+  const fetchAyahCompletionProgress = async (surah, isMountedRef) => {
+    try {
+      const progressResponse = await progressService.getProgress({ module: 'Quran' });
+      const records = progressResponse?.data?.progress || [];
+      const surahAliases = getSurahLevelAliases(surah);
+
+      const completedIds = new Set(
+        records
+          .filter((record) => {
+            const levelId = String(record?.levelId || '').toLowerCase();
+            const lessonId = String(record?.lessonId || '').toLowerCase();
+            return (
+              record?.status === 'completed' &&
+              lessonId.startsWith('ayah_') &&
+              surahAliases.has(levelId)
+            );
+          })
+          .map((record) => String(record.lessonId).toLowerCase())
+      );
+
+      if (isMountedRef.current) {
+        setCompletedAyahIds(completedIds);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch ayah completion progress:', error?.message || error);
+    }
+  };
+
   useFocusEffect(
     React.useCallback(() => {
-      let isMounted = true;
+      const isMountedRef = { current: true };
 
       const loadLatestSurah = async () => {
         const number = Number(initialSurah?.number);
         if (Number.isNaN(number)) return;
 
         try {
-          const response = await contentService.getContentByNumber('Quran', number);
+          const [response] = await Promise.all([
+            contentService.getContentByNumber('Quran', number),
+            fetchAyahCompletionProgress(initialSurah, isMountedRef),
+          ]);
           const latest = response?.data?.content;
-          if (isMounted && latest) {
+          if (isMountedRef.current && latest) {
             setSurahData(latest);
+            fetchAyahCompletionProgress(latest, isMountedRef);
           }
         } catch (error) {
-          if (isMounted) {
+          if (isMountedRef.current) {
             setSurahData(initialSurah);
           }
         }
@@ -42,7 +86,7 @@ const AllAya = ({ navigation, route }) => {
       loadLatestSurah();
 
       return () => {
-        isMounted = false;
+        isMountedRef.current = false;
       };
     }, [initialSurah])
   );
@@ -73,6 +117,10 @@ const AllAya = ({ navigation, route }) => {
     setAudioInstance((prev) => prev + 1);
   };
 
+  const completedCount = ayahs.filter((item, index) =>
+    completedAyahIds.has(getAyahLessonId(item, index).toLowerCase())
+  ).length;
+
   return (
     <LinearGradient
       colors={['#F4FFF5', '#E8F5E9']}
@@ -81,6 +129,22 @@ const AllAya = ({ navigation, route }) => {
       <View style={styles.headerContainer}>
         <Text style={styles.surahTitle}>{surahData?.name}</Text>
         <Text style={styles.arabicTitle}>{surahData?.arabicName || surahData?.nameArabic}</Text>
+
+        <View style={styles.progressContainer}>
+          <View style={styles.progressTrack}>
+            <LinearGradient
+              colors={['#0A7D4F', '#15B872']}
+              style={{
+                width: `${ayahs.length > 0 ? (completedCount / ayahs.length) * 100 : 0}%`,
+                height: '100%',
+                borderRadius: 6,
+              }}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            />
+          </View>
+          <Text style={styles.progressText}>{completedCount} / {ayahs.length} Ayahs Completed</Text>
+        </View>
       </View>
 
       <FlatList
@@ -95,6 +159,12 @@ const AllAya = ({ navigation, route }) => {
             start={{x: 0, y: 0}}
             end={{x: 1, y: 1}}
           >
+            {completedAyahIds.has(getAyahLessonId(item, index).toLowerCase()) && (
+              <View style={styles.completedBadge}>
+                <Text style={styles.completedBadgeText}>✓</Text>
+              </View>
+            )}
+
             {/* Ayah Number Badge */}
             <View style={styles.ayahBadge}>
               <Text style={styles.ayahNumber}>{getAyahNumber(item, index)}</Text>
@@ -196,6 +266,23 @@ const styles = StyleSheet.create({
     marginVertical: 20,
     alignItems: 'center',
   },
+  progressContainer: {
+    width: '100%',
+    marginTop: 10,
+  },
+  progressTrack: {
+    height: 12,
+    backgroundColor: '#DDEFE2',
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  progressText: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0A7D4F',
+    textAlign: 'center',
+  },
 
   surahTitle: {
     fontSize: 26,
@@ -222,6 +309,27 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     borderWidth: 1,
     borderColor: 'rgba(10, 125, 79, 0.1)',
+    position: 'relative',
+  },
+  completedBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#16A34A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 2,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  completedBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+    lineHeight: 18,
   },
 
   ayahBadge: {

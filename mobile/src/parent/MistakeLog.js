@@ -154,19 +154,6 @@ const MistakeLog = ({ route }) => {
                 </View>
                 <Text style={styles.descriptionText}>{mistake.description}</Text>
               </View>
-
-              {!mistake.isResolved && (
-              <TouchableOpacity activeOpacity={0.8}>
-                <LinearGradient
-                  colors={['#0A7D4F', '#15B872']}
-                  style={styles.practiceButton}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                >
-                  <Text style={styles.practiceButtonText}>Practice This ▶</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-              )}
             </LinearGradient>
           ))}
         </View>
@@ -343,19 +330,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#0A7D4F',
     fontWeight: '800',
-  },
-  practiceButton: {
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    elevation: 5,
-  },
-  practiceButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
+  }
 });
 
 export default MistakeLog;

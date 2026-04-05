@@ -1,5 +1,70 @@
 const User = require('../models/User');
 const SurveyResponse = require('../models/SurveyResponse');
+const mongoose = require('mongoose');
+const fs = require('fs/promises');
+const path = require('path');
+const Progress = require('../models/Progress');
+const QuizResult = require('../models/QuizResult');
+const Mistake = require('../models/Mistake');
+const Achievement = require('../models/Achievement');
+const Notification = require('../models/Notification');
+const CoinTransaction = require('../models/CoinTransaction');
+const Recitation = require('../models/Recitation');
+const ParentChild = require('../models/ParentChild');
+
+const UPLOADS_DIR = path.resolve(__dirname, '../../uploads');
+
+const getDeleteOps = (userId, session = null) => {
+  const useSession = (query) => (session ? query.session(session) : query);
+  return [
+    useSession(Progress.deleteMany({ user: userId })),
+    useSession(QuizResult.deleteMany({ user: userId })),
+    useSession(Mistake.deleteMany({ user: userId })),
+    useSession(Achievement.deleteMany({ user: userId })),
+    useSession(Notification.deleteMany({ user: userId })),
+    useSession(CoinTransaction.deleteMany({ user: userId })),
+    useSession(Recitation.deleteMany({ user: userId })),
+    useSession(SurveyResponse.deleteMany({ user: userId })),
+    useSession(ParentChild.deleteMany({
+      $or: [{ parent: userId }, { child: userId }]
+    })),
+    useSession(User.deleteOne({ _id: userId })),
+  ];
+};
+
+const extractLocalUploadPath = (audioUrl) => {
+  if (!audioUrl || typeof audioUrl !== 'string') return null;
+  const normalized = audioUrl.replace(/\\/g, '/');
+  const marker = '/uploads/';
+  const markerIndex = normalized.indexOf(marker);
+  if (markerIndex === -1) return null;
+
+  const relativePath = normalized.slice(markerIndex + marker.length);
+  if (!relativePath || relativePath.includes('..')) return null;
+
+  return path.join(UPLOADS_DIR, relativePath);
+};
+
+const deleteLocalMediaFiles = async (audioUrls = []) => {
+  const localPaths = Array.from(
+    new Set(audioUrls.map(extractLocalUploadPath).filter(Boolean))
+  );
+
+  if (!localPaths.length) return;
+
+  await Promise.allSettled(
+    localPaths.map(async (filePath) => {
+      try {
+        await fs.unlink(filePath);
+      } catch (error) {
+        // Ignore missing files and continue account cleanup.
+        if (error.code !== 'ENOENT') {
+          console.error('Failed to remove media file:', filePath, error.message);
+        }
+      }
+    })
+  );
+};
 
 // @desc    Update user profile
 // @route   PUT /api/users/profile
@@ -180,10 +245,61 @@ const getDashboard = async (req, res, next) => {
   }
 };
 
+// @desc    Delete user account and all related user data
+// @route   DELETE /api/users/account
+// @access  Private
+const deleteAccount = async (req, res, next) => {
+  const userId = req.user.id;
+
+  try {
+    // Capture audio references before deleting recitation/mistake records.
+    const [recitations, mistakes] = await Promise.all([
+      Recitation.find({ user: userId }).select('audioUrl').lean(),
+      Mistake.find({ user: userId }).select('audioUrl').lean(),
+    ]);
+    const audioUrls = [
+      ...recitations.map((item) => item.audioUrl),
+      ...mistakes.map((item) => item.audioUrl),
+    ].filter(Boolean);
+
+    const session = await mongoose.startSession();
+
+    try {
+      await session.withTransaction(async () => {
+        await Promise.all(getDeleteOps(userId, session));
+      });
+    } catch (txError) {
+      const message = String(txError?.message || '');
+      const txUnsupported =
+        message.includes('Transaction numbers are only allowed') ||
+        message.includes('Transaction support');
+
+      if (!txUnsupported) {
+        throw txError;
+      }
+
+      // Fallback for environments without transaction support.
+      await Promise.all(getDeleteOps(userId, null));
+    } finally {
+      await session.endSession();
+    }
+
+    await deleteLocalMediaFiles(audioUrls);
+
+    res.status(200).json({
+      success: true,
+      message: 'Account and related data deleted successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   updateProfile,
   changePassword,
   submitSurvey,
   getSurvey,
-  getDashboard
+  getDashboard,
+  deleteAccount
 };

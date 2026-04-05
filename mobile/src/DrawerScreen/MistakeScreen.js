@@ -144,18 +144,6 @@ export default function MistakeScreen() {
             )}
           </View>
         </View>
-
-        {/* Play Button - show if audio available */}
-        {item.audioUrl && (
-          <TouchableOpacity>
-            <View style={styles.playBox}>
-              <Image 
-                style={styles.playIcon} 
-                source={require('../assests/play.png')}
-              />
-            </View>
-          </TouchableOpacity>
-        )}
       </View>
 
         {/* Action Buttons - only show if not resolved */}

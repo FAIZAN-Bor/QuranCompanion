@@ -42,13 +42,15 @@ const signup = async (req, res, next) => {
     const otp = user.generateOTP();
     await user.save();
 
-    // Send OTP email
-    try {
-      await sendOTPEmail(email, otp, name);
-    } catch (emailError) {
-      console.error('Error sending OTP email:', emailError);
-      // Continue even if email fails
-    }
+    console.log(`\n==========================================`);
+    console.log(`🔐 DEV OTP GENERATED FOR ${email}: ${otp}`);
+    console.log(`==========================================\n`);
+
+    // Send OTP email asynchronously so it doesn't block the API response
+    // If the SMTP server is slow (>10 seconds), this prevents the frontend from timing out
+    sendOTPEmail(email, otp, name).catch(emailError => {
+      console.error('Background Email Error:', emailError.message || emailError);
+    });
 
     res.status(201).json({
       success: true,

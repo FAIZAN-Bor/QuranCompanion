@@ -8,6 +8,7 @@ const {
   getChildQuizzes,
   getChildMistakes,
   getChildAchievements,
+  getChildRecitations,
   unlinkChild
 } = require('../controllers/parentController');
 const { protect, authorize } = require('../middleware/auth');
@@ -23,6 +24,7 @@ router.get('/child/:childId/progress', authorize('parent'), getChildProgress);
 router.get('/child/:childId/quizzes', authorize('parent'), getChildQuizzes);
 router.get('/child/:childId/mistakes', authorize('parent'), getChildMistakes);
 router.get('/child/:childId/achievements', authorize('parent'), getChildAchievements);
+router.get('/child/:childId/recitations', authorize('parent'), getChildRecitations);
 router.delete('/child/:childId', authorize('parent'), unlinkChild);
 
 // Child-only route

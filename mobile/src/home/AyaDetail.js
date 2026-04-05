@@ -11,8 +11,8 @@ import useAudioRecorder from '../hooks/useAudioRecorder';
 const AyaDetail = ({ route }) => {
   const { data, surahId, surahName } = route.params;
   const navigation = useNavigation();
-  const currentArabic = data?.arabic || data?.arabicText || '';
-  const currentEnglish = data?.english || data?.translation || data?.transliteration || '';
+  const currentArabic = data?.arabic || data?.arabicText || data?.text || '';
+  const currentEnglish = data?.english || data?.translation || data?.transliteration || data?.description || '';
   
   const {
     isRecording,
@@ -32,6 +32,7 @@ const AyaDetail = ({ route }) => {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [practiceTime, setPracticeTime] = useState(0);
+  const [failedAttemptsCount, setFailedAttemptsCount] = useState(0);
   const timerRef = useRef(null);
   const cardPressAnim = useRef(new Animated.Value(1)).current;
   const referencePlayerRef = useRef(null);
@@ -135,22 +136,29 @@ const AyaDetail = ({ route }) => {
       }
 
       if (!canMarkDone) {
-        await mistakeService.logMistake({
-          module: 'Quran',
-          levelId: surahId || `surah_${data.surahNumber || 1}`,
-          lessonId: `ayah_${data.number}`,
-          contentId: data._id || null,
-          mistakeType: 'recitation',
-          title: `Ayah ${data.number} Recitation`,
-          description: `Recitation accuracy was ${score}% in ${surahName || 'Surah'}. Needs improvement in tajweed.`,
-          severity: score < 60 ? 'major' : 'moderate'
-        });
+        const newFailCount = failedAttemptsCount + 1;
+        setFailedAttemptsCount(newFailCount);
+
+        if (newFailCount >= 5) {
+          await mistakeService.logMistake({
+            module: 'Quran',
+            levelId: surahId || `surah_${data.surahNumber || 1}`,
+            lessonId: `ayah_${data.number}`,
+            contentId: data._id || null,
+            mistakeType: 'recitation',
+            title: `Ayah ${data.number} Recitation`,
+            description: `Recitation accuracy was ${score}% in ${surahName || 'Surah'}. Needs improvement in tajweed.`,
+            severity: score < 60 ? 'major' : 'moderate'
+          });
+          setFailedAttemptsCount(0); // Reset after logging
+        }
       }
 
       // Navigate to result screen with full analysis
       navigation.navigate('RecitationResult', {
         result: analysisResult,
         module: 'Quran',
+        lessonNumber: 0,
         requiredThreshold,
         canMarkDone,
         title: surahName || 'Quran Practice',

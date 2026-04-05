@@ -6,14 +6,19 @@ const Content = require('../models/Content');
 const getContentByType = async (req, res, next) => {
   try {
     const { type } = req.params;
-    const { difficulty, tags, category } = req.query;
+    const { difficulty, tags, category, summary } = req.query;
 
     let filters = {};
     if (difficulty) filters.difficulty = difficulty;
     if (category) filters.category = category;
     if (tags) filters.tags = { $in: tags.split(',') };
 
-    const content = await Content.getByType(type, filters);
+    let selectFields = {};
+    if (summary === 'true') {
+      selectFields = { verses: 0, characters: 0 };
+    }
+
+    const content = await Content.getByType(type, filters, selectFields);
 
     res.status(200).json({
       success: true,
