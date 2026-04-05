@@ -14,6 +14,15 @@ const ChildProgressOverview = ({ route }) => {
   const [quizCount, setQuizCount] = useState(0);
   const [children, setChildren] = useState([]);
   const [selectedChild, setSelectedChild] = useState(childFromParams || null);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowMs(Date.now());
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!childFromParams) {
@@ -94,13 +103,30 @@ const ChildProgressOverview = ({ route }) => {
 
   const formatLastActive = (dateString) => {
     if (!dateString) return 'N/A';
+
     const date = new Date(dateString);
-    const now = new Date();
-    const diffHours = Math.floor((now - date) / (1000 * 60 * 60));
+    const dateMs = date.getTime();
+    if (!Number.isFinite(dateMs)) return 'N/A';
+
+    const now = new Date(nowMs);
+    const diffMs = Math.max(0, now.getTime() - dateMs);
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    const exactTime = date.toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
     
-    if (diffHours < 1) return 'Just now';
-    if (diffHours < 24) return `${diffHours} hours ago`;
-    return `${Math.floor(diffHours / 24)} days ago`;
+    if (diffMinutes < 1) return `Less than a minute ago (${exactTime})`;
+    if (diffMinutes < 60) return `${diffMinutes} min ago (${exactTime})`;
+    if (diffHours < 24) {
+      const minutesPart = diffMinutes % 60;
+      return `${diffHours}h ${minutesPart}m ago (${exactTime})`;
+    }
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago (${exactTime})`;
   };
 
   // Build accuracy data from weeklyProgress
@@ -136,18 +162,18 @@ const ChildProgressOverview = ({ route }) => {
   // Build lesson progress from lessonsByType
   const buildLessonProgress = () => {
     const defaultProgress = [
-      { name: 'Qaida Lessons', progress: 0, color: '#0A7D4F' },
-      { name: 'Quran Lessons', progress: 0, color: '#1976D2' },
-      { name: 'Duas Learned', progress: 0, color: '#7B1FA2' },
+      { name: 'Qaida Levels', progress: 0, total: 0, color: '#0A7D4F' },
+      { name: 'Quran Surahs', progress: 0, total: 0, color: '#1976D2' },
+      { name: 'Duas Learned', progress: 0, total: 0, color: '#7B1FA2' },
     ];
 
     if (!progressData?.lessonsByType) return defaultProgress;
 
     const { Qaida = {}, Quran = {}, Dua = {} } = progressData.lessonsByType;
     return [
-      { name: 'Qaida Lessons', progress: Qaida.completed || 0, total: Qaida.total || 30, color: '#0A7D4F' },
-      { name: 'Quran Lessons', progress: Quran.completed || 0, total: Quran.total || 114, color: '#1976D2' },
-      { name: 'Duas Learned', progress: Dua.completed || 0, total: Dua.total || 50, color: '#7B1FA2' },
+      { name: 'Qaida Levels', progress: Qaida.completed || 0, total: Qaida.total || 0, color: '#0A7D4F' },
+      { name: 'Quran Surahs', progress: Quran.completed || 0, total: Quran.total || 0, color: '#1976D2' },
+      { name: 'Duas Learned', progress: Dua.completed || 0, total: Dua.total || 0, color: '#7B1FA2' },
     ];
   };
 
@@ -183,7 +209,7 @@ const ChildProgressOverview = ({ route }) => {
   const summaryCards = [
     { label: 'Top Mistake', value: topMistake, color: '#E53935' },
     { label: 'Overall Accuracy', value: `${progressData?.accuracy || 0}%`, color: '#0A7D4F' },
-    { label: 'Last Active', value: formatLastActive(progressData?.lastActivity), color: '#1976D2' },
+    { label: 'Last Active', value: formatLastActive(progressData?.lastActivity || selectedChild?.lastActiveDate), color: '#1976D2' },
     { label: 'Quizzes Attempted', value: `${quizCount}`, color: '#7B1FA2' },
   ];
 

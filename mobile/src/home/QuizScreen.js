@@ -1,6 +1,6 @@
 // QuizScreen.js - Quiz after completing level lessons
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import quizService from '../services/quizService';
-import { useEffect } from 'react';
+import CoinRewardOverlay from '../component/CoinRewardOverlay';
+
+const QUIZ_PASS_THRESHOLD = 60;
 
 const QuizScreen = ({ route, navigation }) => {
   const { level } = route.params;
@@ -26,6 +28,8 @@ const QuizScreen = ({ route, navigation }) => {
   const [loading, setLoading] = useState(true);
   const [quizQuestions, setQuizQuestions] = useState([]);
   const [fetchError, setFetchError] = useState(null);
+  const [showCoinOverlay, setShowCoinOverlay] = useState(false);
+  const [quizCoinsEarned, setQuizCoinsEarned] = useState(0);
 
   useEffect(() => {
     fetchQuizQuestions();
@@ -89,19 +93,38 @@ const QuizScreen = ({ route, navigation }) => {
   const submitQuiz = async () => {
     try {
       setSubmitting(true);
+      const finalScore = score + (selectedAnswer === quizQuestions[currentQuestion].correctAnswer ? 1 : 0);
       const quizData = {
         quizId: `quiz_${level.id}`,
         module: level.module || 'Qaida',
         levelId: level.id,
         questions: userAnswers,
-        score: score + (selectedAnswer === quizQuestions[currentQuestion].correctAnswer ? 1 : 0),
+        score: finalScore,
         totalQuestions: quizQuestions.length,
         timeSpent: 0
       };
       
       console.log('[Quiz] Submitting quiz data:', quizData);
       await quizService.submitQuiz(quizData);
+      setScore(finalScore);
+
+      // Calculate coins earned (mirrors backend coinHelper.calculateQuizCoins)
+      const percentage = (finalScore / quizQuestions.length) * 100;
+      let earned = 0;
+      if (percentage >= QUIZ_PASS_THRESHOLD) {
+        earned = 50; // Base for passing
+        if (percentage === 100) earned += 50;
+        else if (percentage >= 90) earned += 30;
+        else if (percentage >= 80) earned += 10;
+        earned += 20; // First attempt bonus (simplified)
+      } else {
+        earned = 10; // Consolation
+      }
+      setQuizCoinsEarned(earned);
       setShowResult(true);
+
+      // Show coin overlay after brief delay
+      setTimeout(() => setShowCoinOverlay(true), 600);
     } catch (error) {
       console.error('[Quiz] Quiz submission error:', error);
       Alert.alert('Error', 'Failed to submit quiz statistics. Showing results anyway.');
@@ -113,21 +136,21 @@ const QuizScreen = ({ route, navigation }) => {
 
   const handleFinish = () => {
     const percentage = (score / quizQuestions.length) * 100;
-    if (percentage >= 70) {
+    if (percentage >= QUIZ_PASS_THRESHOLD) {
       Alert.alert(
         'Congratulations! 🎉',
         `You passed with ${percentage.toFixed(0)}%!\n\nNext level unlocked!`,
         [
           {
             text: 'Continue',
-            onPress: () => navigation.navigate('ProgressMap')
+            onPress: () => navigation.navigate('BottomTabNavigator', { screen: 'Progress Map' })
           }
         ]
       );
     } else {
       Alert.alert(
         'Try Again',
-        `You scored ${percentage.toFixed(0)}%.\n\nYou need 70% to pass. Review the lessons and try again!`,
+        `You scored ${percentage.toFixed(0)}%.\n\nYou need ${QUIZ_PASS_THRESHOLD}% to pass. Review the lessons and try again!`,
         [
           {
             text: 'Retry',
@@ -198,9 +221,21 @@ const QuizScreen = ({ route, navigation }) => {
 
   if (showResult) {
     const percentage = (score / quizQuestions.length) * 100;
+    const passed = percentage >= QUIZ_PASS_THRESHOLD;
     return (
       <LinearGradient colors={['#E8F5E9', '#F1F8E9', '#FFF9C4']} style={styles.wrapper}>
         <SafeAreaView style={styles.container}>
+
+          {/* Gamified Coin Celebration Overlay */}
+          <CoinRewardOverlay
+            visible={showCoinOverlay}
+            coins={quizCoinsEarned}
+            message={passed
+              ? percentage === 100 ? '🌟 Perfect Score! Massive Bonus!' : '✅ Quiz Passed!'
+              : '💪 Keep trying! Consolation coins awarded.'}
+            onDismiss={() => setShowCoinOverlay(false)}
+          />
+
           <View style={styles.resultContainer}>
             <Text style={styles.resultTitle}>Quiz Complete!</Text>
             <Text style={styles.resultScore}>{score} / {quizQuestions.length}</Text>
@@ -261,14 +296,22 @@ const QuizScreen = ({ route, navigation }) => {
             ))}
           </View>
 
-          <TouchableOpacity onPress={handleNext} activeOpacity={0.8}>
+          <TouchableOpacity 
+            onPress={handleNext} 
+            activeOpacity={0.8}
+            disabled={submitting}
+          >
             <LinearGradient
-              colors={['#0A7D4F', '#15B872']}
+              colors={submitting ? ['#88cbb0', '#88cbb0'] : ['#0A7D4F', '#15B872']}
               style={styles.nextButton}
             >
-              <Text style={styles.nextButtonText}>
-                {currentQuestion + 1 === quizQuestions.length ? 'Finish' : 'Next'}
-              </Text>
+              {submitting ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <Text style={styles.nextButtonText}>
+                  {currentQuestion + 1 === quizQuestions.length ? 'Finish' : 'Next'}
+                </Text>
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </ScrollView>

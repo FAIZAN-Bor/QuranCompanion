@@ -1,5 +1,16 @@
 // Parent Dashboard Service
 import api from './apiConfig';
+import { BASE_URL } from './apiConfig';
+
+const LINK_FALLBACK_BASE_URLS = [
+  BASE_URL,
+  'http://10.0.2.2:5000/api',
+  'http://localhost:5000/api',
+].filter((url, index, arr) => url && arr.indexOf(url) === index);
+
+const isNetworkError = (error) =>
+  error?.message === 'Network Error' ||
+  (error?.code && String(error.code).toUpperCase().includes('NETWORK'));
 
 const parentService = {
   // Get linked children
@@ -57,6 +68,17 @@ const parentService = {
     }
   },
 
+  // Get child recitation attempts
+  getChildRecitations: async (childId) => {
+    try {
+      const response = await api.get(`/parent/child/${childId}/recitations`);
+      return response.data;
+    } catch (error) {
+      console.error('Get child recitations error:', error);
+      throw error.response?.data || error;
+    }
+  },
+
   // Generate link code for adding a child
   generateLinkCode: async (childEmail) => {
     try {
@@ -82,11 +104,12 @@ const parentService = {
   // Get comprehensive dashboard data for a child
   getChildDashboard: async (childId) => {
     try {
-      const [progressRes, quizzesRes, mistakesRes, achievementsRes] = await Promise.all([
+      const [progressRes, quizzesRes, mistakesRes, achievementsRes, recitationsRes] = await Promise.all([
         api.get(`/parent/child/${childId}/progress`),
         api.get(`/parent/child/${childId}/quizzes`),
         api.get(`/parent/child/${childId}/mistakes`),
-        api.get(`/parent/child/${childId}/achievements`)
+        api.get(`/parent/child/${childId}/achievements`),
+        api.get(`/parent/child/${childId}/recitations`),
       ]);
 
       return {
@@ -95,7 +118,8 @@ const parentService = {
           progress: progressRes.data.data,
           quizzes: quizzesRes.data.data.quizzes,
           mistakes: mistakesRes.data.data.mistakes,
-          achievements: achievementsRes.data.data.achievements
+          achievements: achievementsRes.data.data.achievements,
+          recitations: recitationsRes.data.data.recitations,
         }
       };
     } catch (error) {
@@ -128,12 +152,36 @@ const parentService = {
 
   // Link learner to parent using link code (called by learner)
   linkToParent: async (linkCode) => {
+    const payload = { linkCode: String(linkCode || '').trim().toUpperCase() };
+
     try {
-      const response = await api.post('/parent/link', { linkCode: linkCode.toUpperCase() });
+      const response = await api.post('/parent/link', payload);
       return response.data;
     } catch (error) {
-      console.error('Link to parent error:', error);
-      throw error.response?.data || error;
+      if (!isNetworkError(error)) {
+        console.error('Link to parent error:', error);
+        throw error.response?.data || error;
+      }
+
+      // Retry once across common local dev hosts (LAN IP / Android emulator / iOS simulator).
+      for (const fallbackBaseURL of LINK_FALLBACK_BASE_URLS) {
+        try {
+          const fallbackResponse = await api.post('/parent/link', payload, {
+            baseURL: fallbackBaseURL,
+            timeout: 20000,
+          });
+          return fallbackResponse.data;
+        } catch (fallbackError) {
+          if (!isNetworkError(fallbackError)) {
+            throw fallbackError.response?.data || fallbackError;
+          }
+        }
+      }
+
+      throw {
+        message: 'Cannot connect to server. Ensure backend is running and this device can reach the API host.',
+        status: 0,
+      };
     }
   }
 };

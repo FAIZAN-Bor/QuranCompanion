@@ -44,6 +44,23 @@ class AchievementService {
     }
   }
 
+  // Get user badges (derived from achievements)
+  async getUserBadges() {
+    try {
+      const response = await api.get('/achievements');
+      const achievements = response.data?.data?.achievements || response.data?.achievements || [];
+      // Normalize: each achievement becomes a badge entry
+      const badges = achievements.map((a) => ({
+        badgeId: a.type || a.badgeId,
+        name: a.name,
+        earned: a.earned || a.status === 'earned',
+      }));
+      return { badges };
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
   // Handle errors
   handleError(error) {
     if (error.response) {

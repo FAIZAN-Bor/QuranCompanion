@@ -1,6 +1,6 @@
 // ProgressMap.js - Gamified Learning Path Screen with Islamic Aesthetic
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -17,10 +17,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import contentService from '../services/contentService';
 import progressService from '../services/progressService';
+import quizService from '../services/quizService';
+import { useAuth } from '../context/AuthContext';
+import BadgeAwardOverlay from '../component/BadgeAwardOverlay';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 const QAIDA_LEVEL_RANGE = [1, 2, 3, 4, 5, 6, 7];
+const QUIZ_PASS_THRESHOLD = 60;
 const QAIDA_LEVEL_COLORS = ['#0A7D4F', '#0F9D63', '#15B872', '#62B26F', '#7ECB8A', '#9BA3AF', '#34B36E'];
 const QURAN_LEVEL_COLORS = ['#14532D', '#166534', '#15803D', '#16A34A', '#22C55E', '#4ADE80', '#86EFAC'];
 const QURAN_LEVELS = [
@@ -34,60 +38,234 @@ const QURAN_LEVELS = [
 ];
 
 const ProgressMap = ({ navigation }) => {
+  const { user } = useAuth();
+  const proficiencyLevel = user?.proficiencyLevel || 'Beginner';
+
   const [levels, setLevels] = useState([]);
   const [overallProgress, setOverallProgress] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pulseAnim] = useState(new Animated.Value(1));
+  // State for caching static content
+  const [cachedQaidaContent, setCachedQaidaContent] = useState(null);
+  const [cachedQuranContent, setCachedQuranContent] = useState(null);
+  // Quiz pass tracking (levelId -> bestPercentage)
+  const [quizPassMap, setQuizPassMap] = useState({});
+  const [quizPassTimeMap, setQuizPassTimeMap] = useState({});
+  // Badge overlay
+  const [showBadgeOverlay, setShowBadgeOverlay] = useState(false);
+  const [activeBadge, setActiveBadge] = useState(null);
+  const prevLevelStatuses = useRef({});
+  const hasInitializedBadgeState = useRef(false);
+
+  const normalizeLevelId = (value) => {
+    if (!value) return '';
+    const raw = String(value).toLowerCase();
+    const qaidaMatch = raw.match(/qaida(?:_level)?_(\d+)/);
+    if (qaidaMatch) return `qaida_${Number(qaidaMatch[1])}`;
+
+    const quranMatch = raw.match(/quran_(\d+)/);
+    if (quranMatch) return `quran_${Number(quranMatch[1])}`;
+
+    return raw;
+  };
+
+  const getLevelIdAliases = (value) => {
+    const aliases = new Set();
+    const raw = String(value || '').toLowerCase();
+    const normalized = normalizeLevelId(raw);
+
+    if (raw) aliases.add(raw);
+    if (normalized) aliases.add(normalized);
+
+    const qaidaMatch = normalized.match(/^qaida_(\d+)$/);
+    if (qaidaMatch) {
+      const n = Number(qaidaMatch[1]);
+      aliases.add(`qaida_${n}`);
+      aliases.add(`qaida_level_${n}`);
+      aliases.add(`quiz_qaida_${n}`);
+      aliases.add(`quiz_qaida_level_${n}`);
+      aliases.add(`qaida_${n}_quiz`);
+      aliases.add(`qaida_level_${n}_quiz`);
+    }
+
+    const quranMatch = normalized.match(/^quran_(\d+)$/);
+    if (quranMatch) {
+      const n = Number(quranMatch[1]);
+      aliases.add(`quran_${n}`);
+      aliases.add(`quiz_quran_${n}`);
+      aliases.add(`quran_${n}_quiz`);
+    }
+
+    return Array.from(aliases);
+  };
+
+  const buildQuizPassMaps = (quizList = []) => {
+    const newQuizPassMap = {};
+    const newQuizPassTimeMap = {};
+
+    quizList.forEach((q) => {
+      const pct = Number(q?.percentage || 0);
+      const passedAtMs = new Date(q?.completedAt || q?.createdAt || q?.updatedAt || 0).getTime();
+      const idAliases = new Set();
+
+      getLevelIdAliases(q?.levelId).forEach((key) => idAliases.add(key));
+
+      const quizId = String(q?.quizId || '').toLowerCase();
+      if (quizId) {
+        idAliases.add(quizId);
+        const fromQuizId = quizId
+          .replace(/^quiz_/, '')
+          .replace(/_quiz$/, '');
+        getLevelIdAliases(fromQuizId).forEach((key) => idAliases.add(key));
+      }
+
+      idAliases.forEach((key) => {
+        if (!key) return;
+        if (!newQuizPassMap[key] || pct > newQuizPassMap[key]) {
+          newQuizPassMap[key] = pct;
+        }
+        if (pct >= QUIZ_PASS_THRESHOLD && Number.isFinite(passedAtMs) && passedAtMs > 0) {
+          if (!newQuizPassTimeMap[key] || passedAtMs > newQuizPassTimeMap[key]) {
+            newQuizPassTimeMap[key] = passedAtMs;
+          }
+        }
+      });
+    });
+
+    return {
+      quizPassMap: newQuizPassMap,
+      quizPassTimeMap: newQuizPassTimeMap,
+    };
+  };
+
+  const getQuizBestPctForLevel = (levelId, map = quizPassMap) => {
+    return getLevelIdAliases(levelId).reduce((best, key) => {
+      const current = Number(map?.[key] || 0);
+      return current > best ? current : best;
+    }, 0);
+  };
+
+  const getQuizPassedAtForLevel = (levelId, map = quizPassTimeMap) => {
+    return getLevelIdAliases(levelId).reduce((latest, key) => {
+      const current = Number(map?.[key] || 0);
+      return current > latest ? current : latest;
+    }, 0);
+  };
+
+  const getQaidaLevelAliases = (levelNumber) => {
+    const n = Number(levelNumber || 0);
+    if (!n) return new Set();
+    return new Set([`qaida_${n}`, `qaida_level_${n}`]);
+  };
+
+  const getSurahLevelAliases = (surah) => {
+    const aliases = new Set();
+    if (surah?._id) aliases.add(String(surah._id).toLowerCase());
+    const surahNumber = Number(surah?.number || 0);
+    if (surahNumber) aliases.add(`surah_${surahNumber}`);
+    return aliases;
+  };
+
+  const getCompletedUnitIds = (records, levelAliases, lessonPrefix) => {
+    return new Set(
+      records
+        .filter((record) => {
+          const levelId = String(record?.levelId || '').toLowerCase();
+          const lessonId = String(record?.lessonId || '').toLowerCase();
+          return (
+            record?.status === 'completed' &&
+            lessonId.startsWith(lessonPrefix) &&
+            levelAliases.has(levelId)
+          );
+        })
+        .map((record) => String(record.lessonId).toLowerCase())
+    );
+  };
 
   useEffect(() => {
-    fetchProgress();
+    fetchProgress(true); // True indicates this is the initial loud loading
     startPulseAnimation();
 
-    // Add listener to refresh data when screen comes into focus
+    // Add listener to securely refresh data in the background without causing the loading screen to flicker
     const unsubscribe = navigation.addListener('focus', () => {
-      fetchProgress();
+      fetchProgress(false); // False indicates silent background refresh 
     });
 
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, proficiencyLevel]);
 
-  const fetchProgress = async () => {
+  const fetchProgress = async (isInitialLoading = false) => {
     try {
-      setLoading(true);
+      if (isInitialLoading) setLoading(true);
 
-      // Fetch each source individually so one failure doesn't crash everything
       let qaidaContent = [];
       let quranContent = [];
       let qaidaProgressRecords = [];
       let quranProgressRecords = [];
+      let effectiveQuizPassMap = { ...quizPassMap };
+      let effectiveQuizPassTimeMap = { ...quizPassTimeMap };
 
-      try {
-        const qaidaRes = await contentService.getQaidaLessons();
-        qaidaContent = qaidaRes?.data?.content || [];
-      } catch (e) {
-        console.warn('Qaida content fetch failed:', e?.message || e);
-      }
+      // Determine if we need to fetch static content or use cache
+      const needsContentFetch = isInitialLoading || !cachedQaidaContent || !cachedQuranContent;
 
-      try {
-        const quranRes = await contentService.getQuranSurahs();
-        quranContent = quranRes?.data?.content || [];
-      } catch (e) {
-        console.warn('Quran content fetch failed:', e?.message || e);
-      }
+      if (needsContentFetch) {
+        // Fetch all required data concurrently
+        const [qaidaRes, quranRes, qaidaProgRes, quranProgRes, quizRes] = await Promise.allSettled([
+          contentService.getQaidaLessons(),
+          contentService.getQuranSurahs({ summary: true }),
+          progressService.getProgress({ module: 'Qaida' }),
+          progressService.getProgress({ module: 'Quran' }),
+          quizService.getQuizResults({}),
+        ]);
 
-      try {
-        const qaidaProgRes = await progressService.getProgress({ module: 'Qaida' });
-        qaidaProgressRecords = qaidaProgRes?.data?.progress || [];
-      } catch (e) {
-        console.warn('Qaida progress fetch failed:', e?.message || e);
-      }
+        if (qaidaRes.status === 'fulfilled') {
+          qaidaContent = qaidaRes.value?.data?.content || [];
+          setCachedQaidaContent(qaidaContent);
+        }
+        if (quranRes.status === 'fulfilled') {
+          quranContent = quranRes.value?.data?.content || [];
+          setCachedQuranContent(quranContent);
+        }
+        if (qaidaProgRes.status === 'fulfilled') {
+          qaidaProgressRecords = qaidaProgRes.value?.data?.progress || [];
+        }
+        if (quranProgRes.status === 'fulfilled') {
+          quranProgressRecords = quranProgRes.value?.data?.progress || [];
+        }
+        if (quizRes.status === 'fulfilled') {
+          const quizList = quizRes.value?.data?.results || [];
+          const { quizPassMap: newQuizPassMap, quizPassTimeMap: newQuizPassTimeMap } = buildQuizPassMaps(quizList);
+          effectiveQuizPassMap = newQuizPassMap;
+          effectiveQuizPassTimeMap = newQuizPassTimeMap;
+          setQuizPassMap(newQuizPassMap);
+          setQuizPassTimeMap(newQuizPassTimeMap);
+        }
+      } else {
+        // Use cached content, ONLY fetch progress + quiz
+        qaidaContent = cachedQaidaContent;
+        quranContent = cachedQuranContent;
 
-      try {
-        const quranProgRes = await progressService.getProgress({ module: 'Quran' });
-        quranProgressRecords = quranProgRes?.data?.progress || [];
-      } catch (e) {
-        console.warn('Quran progress fetch failed:', e?.message || e);
+        const [qaidaProgRes, quranProgRes, quizRes] = await Promise.allSettled([
+          progressService.getProgress({ module: 'Qaida' }),
+          progressService.getProgress({ module: 'Quran' }),
+          quizService.getQuizResults({}),
+        ]);
+
+        if (qaidaProgRes.status === 'fulfilled') {
+          qaidaProgressRecords = qaidaProgRes.value?.data?.progress || [];
+        }
+        if (quranProgRes.status === 'fulfilled') {
+          quranProgressRecords = quranProgRes.value?.data?.progress || [];
+        }
+        if (quizRes.status === 'fulfilled') {
+          const quizList = quizRes.value?.data?.results || [];
+          const { quizPassMap: newQuizPassMap, quizPassTimeMap: newQuizPassTimeMap } = buildQuizPassMaps(quizList);
+          effectiveQuizPassMap = newQuizPassMap;
+          effectiveQuizPassTimeMap = newQuizPassTimeMap;
+          setQuizPassMap(newQuizPassMap);
+          setQuizPassTimeMap(newQuizPassTimeMap);
+        }
       }
 
       const contentByNumber = new Map();
@@ -98,42 +276,76 @@ const ProgressMap = ({ navigation }) => {
         }
       });
 
-      const qaidaProgressByLevel = new Map();
+      const qaidaDirectByLevel = new Map();
       qaidaProgressRecords.forEach((record) => {
         if (!record?.levelId) return;
-        const current = qaidaProgressByLevel.get(record.levelId);
+        const normalizedLevelId = normalizeLevelId(record.levelId);
+        if (!normalizedLevelId.startsWith('qaida_')) return;
+
+        const current = qaidaDirectByLevel.get(normalizedLevelId);
         if (!current || (record.completionPercentage || 0) > (current.completionPercentage || 0)) {
-          qaidaProgressByLevel.set(record.levelId, record);
+          qaidaDirectByLevel.set(normalizedLevelId, record);
         }
       });
 
-      const quranProgressByLevel = new Map();
+      const quranDirectByLevel = new Map();
       quranProgressRecords.forEach((record) => {
         if (!record?.levelId) return;
-        const current = quranProgressByLevel.get(record.levelId);
+        const normalizedLevelId = normalizeLevelId(record.levelId);
+        if (!normalizedLevelId.startsWith('quran_')) return;
+
+        const current = quranDirectByLevel.get(normalizedLevelId);
         if (!current || (record.completionPercentage || 0) > (current.completionPercentage || 0)) {
-          quranProgressByLevel.set(record.levelId, record);
+          quranDirectByLevel.set(normalizedLevelId, record);
         }
       });
 
       let previousQaidaCompleted = true; // Level 1 is unlocked by default
+      // Quiz for level N unlocks level N+1.
+      let previousQaidaQuizPassed = true;
 
       const mappedQaidaLevels = QAIDA_LEVEL_RANGE.map((levelNumber, index) => {
         const levelId = `qaida_${levelNumber}`;
         const content = contentByNumber.get(levelNumber);
-        const progress = qaidaProgressByLevel.get(levelId);
+        const directLevelProgress = qaidaDirectByLevel.get(levelId);
         const isMissingTakhti = levelNumber === 6 && !content;
+
+        const qaidaAliases = getQaidaLevelAliases(levelNumber);
+        const completedCharacterIds = getCompletedUnitIds(qaidaProgressRecords, qaidaAliases, 'character_');
+        const totalCharacters = Array.isArray(content?.characters) ? content.characters.length : 0;
+        const completedCharacters = totalCharacters > 0
+          ? Array.from({ length: totalCharacters }).filter((_, idx) =>
+              completedCharacterIds.has(`character_${idx + 1}`)
+            ).length
+          : 0;
 
         const progressPercent = isMissingTakhti
           ? 0
-          : Math.max(0, Math.min(100, Number(progress?.completionPercentage || 0)));
-        const completed = progressPercent >= 100 || progress?.status === 'completed';
+          : totalCharacters > 0
+            ? Math.round((completedCharacters / totalCharacters) * 100)
+            : Math.max(0, Math.min(100, Number(directLevelProgress?.completionPercentage || 0)));
+
+        const completed = (totalCharacters > 0 && completedCharacters >= totalCharacters)
+          || progressPercent >= 100
+          || directLevelProgress?.status === 'completed';
+
+        const quizBestPct = getQuizBestPctForLevel(levelId, effectiveQuizPassMap);
+        const quizPassed = quizBestPct >= QUIZ_PASS_THRESHOLD;
+        const quizPassedAt = getQuizPassedAtForLevel(levelId, effectiveQuizPassTimeMap);
+
+        const gateFromPrevious = previousQaidaCompleted && previousQaidaQuizPassed;
+        let isUnlocked = gateFromPrevious && !isMissingTakhti;
+
+        // Proficiency level override for Qaida
+        if (proficiencyLevel === 'Intermediate' || proficiencyLevel === 'Advanced') {
+          isUnlocked = !isMissingTakhti;
+        }
+
+        const finalStatus = (isUnlocked || completed) ? (completed ? 'completed' : 'unlocked') : 'locked';
         
-        const isUnlocked = previousQaidaCompleted && !isMissingTakhti;
-        const finalStatus = isUnlocked ? (completed ? 'completed' : 'unlocked') : 'locked';
-        
-        // Update previous completed state for the next level
+        // Update prerequisites for next level
         previousQaidaCompleted = completed;
+        previousQaidaQuizPassed = quizPassed;
 
         return {
           id: levelId,
@@ -152,11 +364,17 @@ const ProgressMap = ({ navigation }) => {
                   id: content._id || `${levelId}_lesson_1`,
                   title: content.name,
                   completed,
+                  lessonProgress: progressPercent,
+                  completedUnits: completedCharacters,
+                  totalUnits: totalCharacters || 1,
                   content,
                 },
               ]
             : [],
           quizRequired: !!content,
+          quizPassed,
+          quizBestPct,
+          quizPassedAt,
           progress: progressPercent,
         };
       });
@@ -170,21 +388,83 @@ const ProgressMap = ({ navigation }) => {
       });
 
       let previousQuranCompleted = true; // Level 1 Quran is unlocked by default
+      let previousQuranQuizPassed = true;
 
       const mappedQuranLevels = QURAN_LEVELS.map((config, index) => {
         const levelId = `quran_${config.levelNumber}`;
-        const progress = quranProgressByLevel.get(levelId);
+        const directLevelProgress = quranDirectByLevel.get(levelId);
         const surahs = config.surahNumbers
           .map((number) => quranByNumber.get(number))
           .filter(Boolean);
 
-        const progressPercent = Math.max(0, Math.min(100, Number(progress?.completionPercentage || 0)));
-        const completed = progressPercent >= 100 || progress?.status === 'completed';
-        
-        const isUnlocked = previousQuranCompleted && surahs.length > 0;
-        const finalStatus = isUnlocked ? (completed ? 'completed' : 'unlocked') : 'locked';
+        const surahLessons = surahs.map((surah) => {
+          const totalAyahs = Number(
+            surah?.totalAyahs ||
+            (Array.isArray(surah?.ayahs) ? surah.ayahs.length : 0) ||
+            (Array.isArray(surah?.verses) ? surah.verses.length : 0) ||
+            0
+          );
+          const surahAliases = getSurahLevelAliases(surah);
+          const completedAyahIds = getCompletedUnitIds(quranProgressRecords, surahAliases, 'ayah_');
+          const completedAyahs = totalAyahs > 0
+            ? Math.min(totalAyahs, completedAyahIds.size)
+            : 0;
+
+          const directSurahCompleted = quranProgressRecords.some((record) => {
+            const recordLevelId = String(record?.levelId || '').toLowerCase();
+            const recordLessonId = String(record?.lessonId || '').toLowerCase();
+            const surahId = String(surah?._id || '').toLowerCase();
+            return (
+              record?.status === 'completed' &&
+              recordLevelId === levelId &&
+              !!surahId &&
+              recordLessonId === surahId
+            );
+          });
+
+          const surahCompleted = (totalAyahs > 0 && completedAyahs >= totalAyahs) || directSurahCompleted;
+          const surahProgress = totalAyahs > 0
+            ? Math.round((completedAyahs / totalAyahs) * 100)
+            : (directSurahCompleted ? 100 : 0);
+
+          return {
+            id: surah._id || `quran_${surah.number}`,
+            title: `${surah.name} (${surah.number})`,
+            completed: surahCompleted,
+            lessonProgress: surahProgress,
+            completedUnits: completedAyahs,
+            totalUnits: totalAyahs || 1,
+            content: surah,
+          };
+        });
+
+        const totalAyahsAll = surahLessons.reduce((sum, lesson) => sum + Number(lesson.totalUnits || 0), 0);
+        const completedAyahsAll = surahLessons.reduce((sum, lesson) => sum + Number(lesson.completedUnits || 0), 0);
+
+        const progressPercent = totalAyahsAll > 0
+          ? Math.round((completedAyahsAll / totalAyahsAll) * 100)
+          : Math.max(0, Math.min(100, Number(directLevelProgress?.completionPercentage || 0)));
+
+        const completed = (totalAyahsAll > 0 && completedAyahsAll >= totalAyahsAll)
+          || progressPercent >= 100
+          || directLevelProgress?.status === 'completed';
+
+        const quizBestPct = getQuizBestPctForLevel(levelId, effectiveQuizPassMap);
+        const quizPassed = quizBestPct >= QUIZ_PASS_THRESHOLD;
+        const quizPassedAt = getQuizPassedAtForLevel(levelId, effectiveQuizPassTimeMap);
+
+        const gateFromPrevious = previousQuranCompleted && previousQuranQuizPassed;
+        let isUnlocked = gateFromPrevious && surahs.length > 0;
+
+        // Proficiency level override for Quran
+        if (proficiencyLevel === 'Advanced') {
+          isUnlocked = surahs.length > 0;
+        }
+
+        const finalStatus = (isUnlocked || completed) ? (completed ? 'completed' : 'unlocked') : 'locked';
         
         previousQuranCompleted = completed;
+        previousQuranQuizPassed = quizPassed;
 
         return {
           id: levelId,
@@ -197,33 +477,91 @@ const ProgressMap = ({ navigation }) => {
           icon: 'quran',
           color: QURAN_LEVEL_COLORS[index],
           status: finalStatus,
-          lessons: surahs.map((surah) => ({
-            id: surah._id || `quran_${surah.number}`,
-            title: `${surah.name} (${surah.number})`,
-            completed,
-            content: surah,
-          })),
+          lessons: surahLessons,
           quizRequired: surahs.length > 0,
+          quizPassed,
+          quizBestPct,
+          quizPassedAt,
           progress: progressPercent,
         };
       });
 
       const mappedLevels = [...mappedQaidaLevels, ...mappedQuranLevels];
 
+      // Auto-show badge overlay when the quiz above a badge is passed
+      const BADGES_DEFS = getBadgeDefs();
+      const isFirstBadgeSync = !hasInitializedBadgeState.current;
+      const newlyUnlockedBadges = [];
+      for (const badge of BADGES_DEFS) {
+        const matchedLevel = mappedLevels.find(
+          (l) => l.module === badge.module && l.levelNumber === badge.afterLevel
+        );
+        const currentUnlocked = (matchedLevel?.quizBestPct || 0) >= QUIZ_PASS_THRESHOLD;
+        const prevUnlocked = Boolean(prevLevelStatuses.current[badge.id]);
+
+        // Do not auto-popup badges on first load after login.
+        if (!isFirstBadgeSync && !prevUnlocked && currentUnlocked) {
+          newlyUnlockedBadges.push({
+            ...badge,
+            quizPassedAt: Number(matchedLevel?.quizPassedAt || 0),
+          });
+        }
+      }
+
+      if (!isFirstBadgeSync && newlyUnlockedBadges.length) {
+        const badgeToShow = newlyUnlockedBadges.sort((a, b) => {
+          if ((b.quizPassedAt || 0) !== (a.quizPassedAt || 0)) {
+            return (b.quizPassedAt || 0) - (a.quizPassedAt || 0);
+          }
+          return b.afterLevel - a.afterLevel;
+        })[0];
+
+        setTimeout(() => {
+          setActiveBadge(badgeToShow);
+          setShowBadgeOverlay(true);
+        }, 1200);
+      }
+
+      // Store current statuses for comparison next refresh
+      const newStatuses = {};
+      mappedLevels.forEach((l) => { newStatuses[l.id] = l.status; });
+      BADGES_DEFS.forEach((b) => {
+        const ml = mappedLevels.find((l) => l.module === b.module && l.levelNumber === b.afterLevel);
+        newStatuses[b.id] = (ml?.quizBestPct || 0) >= QUIZ_PASS_THRESHOLD;
+      });
+      prevLevelStatuses.current = newStatuses;
+      hasInitializedBadgeState.current = true;
+
       setLevels(mappedLevels);
 
-      const progressEligibleLevels = mappedLevels.filter((level) => level.status !== 'locked');
-      const progressSum = progressEligibleLevels.reduce((sum, level) => sum + (level.progress || 0), 0);
-      setOverallProgress(
-        progressEligibleLevels.length
-          ? Math.round(progressSum / progressEligibleLevels.length)
-          : 0
-      );
+      const qaidaLevels = mappedQaidaLevels.filter((item) => item.quizRequired);
+      const quranLevels = mappedQuranLevels.filter((item) => item.quizRequired);
+
+      const qaidaLessonPct = qaidaLevels.length
+        ? qaidaLevels.reduce((sum, item) => sum + Number(item.progress || 0), 0) / qaidaLevels.length
+        : 0;
+      const quranLessonPct = quranLevels.length
+        ? quranLevels.reduce((sum, item) => sum + Number(item.progress || 0), 0) / quranLevels.length
+        : 0;
+
+      const qaidaQuizPct = qaidaLevels.length
+        ? (qaidaLevels.filter((item) => item.quizPassed).length / qaidaLevels.length) * 100
+        : 0;
+      const quranQuizPct = quranLevels.length
+        ? (quranLevels.filter((item) => item.quizPassed).length / quranLevels.length) * 100
+        : 0;
+
+      // Fixed-weight journey model: lessons and quizzes from Qaida + Quran.
+      const weightedProgress =
+        (qaidaLessonPct * 0.35) +
+        (quranLessonPct * 0.35) +
+        (qaidaQuizPct * 0.15) +
+        (quranQuizPct * 0.15);
+
+      setOverallProgress((prev) => Math.max(prev, Math.round(weightedProgress)));
     } catch (error) {
       console.error('Progress fetch error:', error);
       Alert.alert('Error', 'Failed to load progress map from server.');
-      setLevels([]);
-      setOverallProgress(0);
     } finally {
       setLoading(false);
     }
@@ -254,7 +592,10 @@ const ProgressMap = ({ navigation }) => {
 
   const handleLevelPress = (level) => {
     if (level.status === 'locked') {
-      Alert.alert('Locked', 'Please complete the previous levels to unlock this one!');
+      const msg = !level.quizPassed && level.quizRequired
+        ? `Complete the previous level's quiz with at least ${QUIZ_PASS_THRESHOLD}% to unlock this one!`
+        : 'Please complete the previous levels to unlock this one!';
+      Alert.alert('🔒 Locked', msg);
       return;
     }
     navigation.navigate('LevelDetail', { level });
@@ -262,10 +603,19 @@ const ProgressMap = ({ navigation }) => {
 
   const handleQuizPress = (level) => {
     if (level.status !== 'completed') {
-      Alert.alert('Locked', 'Please complete the lessons for this level to unlock the quiz!');
+      Alert.alert('🔒 Locked', 'Please complete all lessons for this level first to unlock the quiz!');
       return;
     }
     navigation.navigate('QuizScreen', { level });
+  };
+
+  const handleBadgePress = (badge, isLocked) => {
+    if (isLocked) {
+      Alert.alert('🔒 Badge Locked', `Pass the quiz above this badge with at least ${QUIZ_PASS_THRESHOLD}% in ${badge.module} Level ${badge.afterLevel} to earn it!`);
+      return;
+    }
+    setActiveBadge(badge);
+    setShowBadgeOverlay(true);
   };
 
   const renderLevelNode = (level, index) => {
@@ -336,6 +686,7 @@ const ProgressMap = ({ navigation }) => {
             <Text style={styles.levelSubtitle}>✨ {level.subtitle}</Text>
             <View style={styles.lessonInfo}>
               <Text style={styles.lessonCount}>📚 {level.lessons.length} Lessons</Text>
+              <Text style={[styles.lessonCount, {marginLeft: 8, color: '#0A7D4F'}]}>📊 {level.progress || 0}%</Text>
               {level.quizRequired && <Text style={styles.quizBadge}>🎯 Quiz</Text>}
             </View>
           </View>
@@ -349,8 +700,9 @@ const ProgressMap = ({ navigation }) => {
 
   const renderQuizNode = (level, index) => {
     const isEven = index % 2 === 0;
-    const quizCompleted = level.quizCompleted || false;
     const isLocked = level.status !== 'completed';
+    const quizPassed = level.quizPassed || false;
+    const quizBestPct = level.quizBestPct || 0;
 
     return (
       <View style={styles.quizNodeContainer}>
@@ -364,18 +716,20 @@ const ProgressMap = ({ navigation }) => {
             style={styles.quizTouchable}
           >
             <LinearGradient
-              colors={isLocked ? ['#D1D5DB', '#9CA3AF'] : quizCompleted ? ['#FFD700', '#FFA500'] : ['#8B5CF6', '#6366F1']}
+              colors={isLocked ? ['#D1D5DB', '#9CA3AF'] : quizPassed ? ['#FFD700', '#FFA500'] : ['#8B5CF6', '#6366F1']}
               style={styles.quizNode}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
             >
               <Image source={isLocked ? require('../assests/settings.png') : require('../assests/quiz.png')} style={[styles.quizIcon, isLocked && { width: 20, height: 20, tintColor: '#FFF' }]} />
-              {quizCompleted && <Text style={styles.quizCheck}>✓</Text>}
+              {quizPassed && <Text style={styles.quizCheck}>✓</Text>}
             </LinearGradient>
           </TouchableOpacity>
           
           <View style={[styles.quizLabel, isEven ? styles.quizLabelRight : styles.quizLabelLeft]}>
-            <Text style={styles.quizLabelText}>{isLocked ? 'Quiz Locked' : 'Quiz Challenge'}</Text>
+            <Text style={styles.quizLabelText}>
+              {isLocked ? 'Quiz Locked' : quizPassed ? `Passed ✓ (${quizBestPct}%)` : `Quiz (need ${QUIZ_PASS_THRESHOLD}%)`}
+            </Text>
           </View>
         </View>
       </View>
@@ -394,7 +748,11 @@ const ProgressMap = ({ navigation }) => {
           </View>
         </View>
 
-        <View style={styles.badgeWrapper}>
+        <TouchableOpacity
+          style={styles.badgeWrapper}
+          activeOpacity={0.8}
+          onPress={() => handleBadgePress(badgeInfo, isLocked)}
+        >
           <LinearGradient
             colors={isLocked ? ['#D1D5DB', '#9CA3AF', '#6B7280'] : ['#F59E0B', '#D97706', '#B45309']}
             style={[styles.badgeNode, isLocked && { elevation: 2 }]}
@@ -404,10 +762,7 @@ const ProgressMap = ({ navigation }) => {
             <View style={styles.badgeStarburst}>
               <Text style={[styles.badgeStars, isLocked && { opacity: 0.2 }]}>⭐</Text>
             </View>
-            <Image 
-              source={isLocked ? require('../assests/settings.png') : require('../assests/coin.png')} 
-              style={[styles.badgeIcon, isLocked && { tintColor: '#FFF', width: 28, height: 28 }]} 
-            />
+            <Text style={styles.badgeNodeEmoji}>{isLocked ? '🔒' : (badgeInfo.emoji || '🏅')}</Text>
             <Text style={styles.badgeEarnedText}>{isLocked ? 'Locked' : 'Badge Earned!'}</Text>
           </LinearGradient>
           
@@ -415,7 +770,7 @@ const ProgressMap = ({ navigation }) => {
             <Text style={styles.badgeTitle}>{badgeInfo.title}</Text>
             <Text style={styles.badgeDescription}>{badgeInfo.description}</Text>
           </View>
-        </View>
+        </TouchableOpacity>
       </View>
     );
   };
@@ -456,15 +811,27 @@ const ProgressMap = ({ navigation }) => {
     );
   };
 
-  // Badge nodes data
-  const badges = [
-    { id: 'badge1', module: 'Qaida', afterLevel: 2, title: 'Alphabet Master', description: 'Mastered Arabic Letters!' },
-    { id: 'badge-mid', module: 'Qaida', afterLevel: 4, title: 'Takhti 4 Badge', description: 'Completed key Qaida milestone!' },
+  // Badge definitions — also used in auto-show and click logic
+  const getBadgeDefs = () => [
+    { id: 'badge-qaida-2', module: 'Qaida', afterLevel: 2, emoji: '🅰️', title: 'Alphabet Master', description: 'You have mastered the Arabic alphabet letters!', reward: 150 },
+    { id: 'badge-qaida-4', module: 'Qaida', afterLevel: 4, emoji: '📖', title: 'Takhti Scholar', description: 'Completed key Qaida Takhti milestone!', reward: 200 },
+    { id: 'badge-qaida-7', module: 'Qaida', afterLevel: 7, emoji: '🎓', title: 'Qaida Graduate', description: 'You have completed the entire Qaida course!', reward: 500 },
+    { id: 'badge-quran-3', module: 'Quran', afterLevel: 3, emoji: '🌙', title: 'Quran Beginner', description: 'Completed the first 3 Quran lesson groups!', reward: 300 },
+    { id: 'badge-quran-7', module: 'Quran', afterLevel: 7, emoji: '🏆', title: 'Quran Champion', description: 'Completed all Quran lessons. MashaAllah!', reward: 1000 },
   ];
+  const badges = getBadgeDefs();
 
   return (
     <LinearGradient colors={['#F0FDF4', '#ECFDF5', '#D1FAE5']} style={styles.wrapper}>
       <SafeAreaView style={styles.container}>
+
+        {/* Gamified Badge Award Overlay */}
+        <BadgeAwardOverlay
+          visible={showBadgeOverlay}
+          badge={activeBadge}
+          onDismiss={() => { setShowBadgeOverlay(false); setActiveBadge(null); }}
+        />
+
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#0A7D4F" />
@@ -527,7 +894,7 @@ const ProgressMap = ({ navigation }) => {
             // Add badge after certain levels
             const badge = badges.find((b) => b.afterLevel === level.levelNumber && b.module === level.module);
             if (badge) {
-              const isBadgeLocked = level.status !== 'completed';
+              const isBadgeLocked = (level.quizBestPct || 0) < QUIZ_PASS_THRESHOLD;
               elements.push(renderBadgeNode(badge, index, isBadgeLocked));
             }
 
@@ -1058,6 +1425,10 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: '800',
     marginTop: 2,
+  },
+  badgeNodeEmoji: {
+    fontSize: 38,
+    marginBottom: 2,
   },
   badgeInfoCard: {
     backgroundColor: '#FFF',

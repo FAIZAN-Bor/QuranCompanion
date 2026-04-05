@@ -3,6 +3,77 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from 'react-nat
 import LinearGradient from 'react-native-linear-gradient';
 import parentService from '../services/parentService';
 
+const QUIZ_PASS_THRESHOLD = 60;
+const MAP_BADGES = [
+  { id: 'badge-qaida-2', module: 'Qaida', afterLevel: 2, icon: '🅰️', title: 'Alphabet Master', description: 'Passed Qaida Level 2 quiz.' },
+  { id: 'badge-qaida-4', module: 'Qaida', afterLevel: 4, icon: '📖', title: 'Takhti Scholar', description: 'Passed Qaida Level 4 quiz.' },
+  { id: 'badge-qaida-7', module: 'Qaida', afterLevel: 7, icon: '🎓', title: 'Qaida Graduate', description: 'Passed Qaida Level 7 quiz.' },
+  { id: 'badge-quran-3', module: 'Quran', afterLevel: 3, icon: '🌙', title: 'Quran Beginner', description: 'Passed Quran Level 3 quiz.' },
+  { id: 'badge-quran-7', module: 'Quran', afterLevel: 7, icon: '🏆', title: 'Quran Champion', description: 'Passed Quran Level 7 quiz.' },
+];
+
+const normalizeLevelId = (value) => {
+  const raw = String(value || '').toLowerCase();
+  const match = raw.match(/(qaida|quran|dua)(?:_level)?_(\d+)/);
+  if (!match) return raw;
+  return `${match[1]}_${Number(match[2])}`;
+};
+
+const getLevelIdAliases = (value) => {
+  const raw = String(value || '').toLowerCase();
+  const normalized = normalizeLevelId(raw);
+  const aliases = new Set([raw, normalized].filter(Boolean));
+
+  const match = normalized.match(/^(qaida|quran)_(\d+)$/);
+  if (match) {
+    const module = match[1];
+    const level = Number(match[2]);
+    aliases.add(`${module}_${level}`);
+    aliases.add(`${module}_level_${level}`);
+    aliases.add(`quiz_${module}_${level}`);
+    aliases.add(`${module}_${level}_quiz`);
+    aliases.add(`quiz_${module}_level_${level}`);
+    aliases.add(`${module}_level_${level}_quiz`);
+  }
+
+  return Array.from(aliases);
+};
+
+const getMapBadgesFromQuizzes = (quizzes = []) => {
+  const badgePassTimes = {};
+
+  quizzes.forEach((quiz) => {
+    const percentage = Number(quiz?.percentage || 0);
+    if (percentage < QUIZ_PASS_THRESHOLD) return;
+
+    const completedAtMs = new Date(quiz?.completedAt || quiz?.createdAt || quiz?.updatedAt || 0).getTime();
+    if (!Number.isFinite(completedAtMs) || completedAtMs <= 0) return;
+
+    const aliases = new Set();
+    getLevelIdAliases(quiz?.levelId).forEach((a) => aliases.add(a));
+
+    const quizId = String(quiz?.quizId || '').toLowerCase();
+    if (quizId) {
+      aliases.add(quizId);
+      const fromQuizId = quizId.replace(/^quiz_/, '').replace(/_quiz$/, '');
+      getLevelIdAliases(fromQuizId).forEach((a) => aliases.add(a));
+    }
+
+    MAP_BADGES.forEach((badge) => {
+      const levelKey = `${badge.module.toLowerCase()}_${badge.afterLevel}`;
+      if (aliases.has(levelKey)) {
+        const prev = badgePassTimes[badge.id] || 0;
+        if (completedAtMs > prev) badgePassTimes[badge.id] = completedAtMs;
+      }
+    });
+  });
+
+  return MAP_BADGES
+    .map((badge) => ({ ...badge, earnedAtMs: badgePassTimes[badge.id] || 0 }))
+    .filter((badge) => badge.earnedAtMs > 0)
+    .sort((a, b) => b.earnedAtMs - a.earnedAtMs);
+};
+
 const ActivityTimeline = ({ route }) => {
   const childFromParams = route?.params?.child;
   const [activities, setActivities] = useState([]);
@@ -10,28 +81,81 @@ const ActivityTimeline = ({ route }) => {
   const [stats, setStats] = useState({ total: 0, lessons: 0, badges: 0 });
   const [children, setChildren] = useState([]);
   const [selectedChild, setSelectedChild] = useState(childFromParams || null);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowMs(Date.now());
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const formatTimeAgo = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (!dateString) return 'Unknown';
 
-    if (diffHours < 1) return 'Just now';
-    if (diffHours < 24) return `${diffHours} hours ago`;
-    if (diffDays === 1) return 'Yesterday';
-    return `${diffDays} days ago`;
+    const date = new Date(dateString);
+    const dateMs = date.getTime();
+    if (!Number.isFinite(dateMs)) return 'Unknown';
+
+    const now = new Date(nowMs);
+    const diffMs = Math.max(0, now.getTime() - dateMs);
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    const exactTime = date.toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    if (diffMinutes < 1) return `Less than a minute ago (${exactTime})`;
+    if (diffMinutes < 60) return `${diffMinutes} min ago (${exactTime})`;
+    if (diffHours < 24) {
+      const mins = diffMinutes % 60;
+      return `${diffHours}h ${mins}m ago (${exactTime})`;
+    }
+    if (diffDays === 1) return `Yesterday (${exactTime})`;
+    return `${diffDays} days ago (${exactTime})`;
   };
 
   const getDateLabel = (dateString) => {
+    if (!dateString) return 'Unknown';
+
     const date = new Date(dateString);
-    const now = new Date();
-    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+    const dateMs = date.getTime();
+    if (!Number.isFinite(dateMs)) return 'Unknown';
+
+    const now = new Date(nowMs);
+    const diffDays = Math.floor((now.getTime() - dateMs) / (1000 * 60 * 60 * 24));
 
     if (diffDays === 0) return 'Today';
     if (diffDays === 1) return 'Yesterday';
     return `${diffDays} days ago`;
+  };
+
+  const getLevelLabel = (levelId, module) => {
+    const raw = String(levelId || '').toLowerCase();
+    const match = raw.match(/(qaida|quran|dua)(?:_level)?_(\d+)/);
+    if (match) {
+      const name = match[1].charAt(0).toUpperCase() + match[1].slice(1);
+      return `${name} Level ${Number(match[2])}`;
+    }
+    return module || 'Lesson';
+  };
+
+  const getLessonLabel = (lesson) => {
+    const contentName = lesson?.contentId?.name || lesson?.contentId?.title;
+    if (contentName) return contentName;
+
+    const lessonId = String(lesson?.lessonId || '').trim();
+    if (!lessonId) return 'Lesson';
+
+    return lessonId
+      .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   };
 
   useEffect(() => {
@@ -76,73 +200,139 @@ const ActivityTimeline = ({ route }) => {
       setLoading(true);
       
       // Fetch all data in parallel
-      const [progressRes, quizzesRes, achievementsRes] = await Promise.all([
+      const [progressRes, quizzesRes, achievementsRes, recitationsRes] = await Promise.all([
         parentService.getChildProgress(selectedChild._id),
         parentService.getChildQuizzes(selectedChild._id),
         parentService.getChildAchievements(selectedChild._id),
+        parentService.getChildRecitations(selectedChild._id),
       ]);
 
       const allActivities = [];
 
-      // Add lessons from progress (progressRes.data is { progress, summary })
-      // Use progress array which has completedAt dates
+      // Add lessons from progress and collapse duplicates by module+level+lessonId.
       if (progressRes.data?.progress) {
+        const lessonEventsByKey = new Map();
+
         progressRes.data.progress.forEach((lesson, index) => {
-          if (lesson.completedAt) {
-            allActivities.push({
-              id: `lesson-${index}`,
-              type: 'lesson',
-              title: `Completed ${lesson.module || 'Lesson'}`,
-              subtitle: `Accuracy: ${lesson.accuracy || 0}%`,
-              time: formatTimeAgo(lesson.completedAt),
-              date: getDateLabel(lesson.completedAt),
-              timestamp: new Date(lesson.completedAt),
-              icon: lesson.module === 'Quran' ? '📖' : lesson.module === 'Dua' ? '🤲' : '📚',
-              color: ['#0A7D4F', '#15B872'],
-            });
+          const activityTime = lesson.lastAccessedAt || lesson.completedAt || lesson.updatedAt || lesson.createdAt;
+          if (!activityTime) return;
+
+          const lessonKey = `${lesson.module || 'Lesson'}_${normalizeLevelId(lesson.levelId || 'unknown')}_${lesson.lessonId || 'lesson'}`;
+          const event = {
+            id: `lesson-${index}`,
+            type: 'lesson',
+            title: `${lesson.status === 'completed' ? 'Completed' : 'Practiced'} ${getLevelLabel(lesson.levelId, lesson.module)}`,
+            subtitle: `${getLessonLabel(lesson)} • Accuracy: ${Math.round(lesson.accuracy || 0)}%`,
+            time: formatTimeAgo(activityTime),
+            date: getDateLabel(activityTime),
+            timestamp: new Date(activityTime),
+            icon: lesson.module === 'Quran' ? '📖' : lesson.module === 'Dua' ? '🤲' : '📚',
+            color: ['#0A7D4F', '#15B872'],
+          };
+
+          const existing = lessonEventsByKey.get(lessonKey);
+          if (!existing || event.timestamp.getTime() > existing.timestamp.getTime()) {
+            lessonEventsByKey.set(lessonKey, event);
           }
         });
+
+        lessonEventsByKey.forEach((event) => allActivities.push(event));
       }
 
       // Add quizzes (quizzesRes.data is { quizzes })
       if (quizzesRes.data?.quizzes) {
         quizzesRes.data.quizzes.forEach((quiz, index) => {
+          const activityTime = quiz.completedAt || quiz.createdAt || quiz.updatedAt;
+          if (!activityTime) return;
+
           allActivities.push({
             id: `quiz-${index}`,
             type: 'quiz',
-            title: `Completed ${quiz.module || 'Quiz'}`,
-            subtitle: `Score: ${quiz.score}%`,
-            time: formatTimeAgo(quiz.completedAt),
-            date: getDateLabel(quiz.completedAt),
-            timestamp: new Date(quiz.completedAt),
+            title: `Quiz ${getLevelLabel(quiz.levelId, quiz.module)}`,
+            subtitle: `Score: ${quiz.percentage || quiz.score || 0}%`,
+            time: formatTimeAgo(activityTime),
+            date: getDateLabel(activityTime),
+            timestamp: new Date(activityTime),
             icon: '✍️',
             color: ['#7B1FA2', '#AB47BC'],
           });
         });
+
+        const derivedBadgeEvents = getMapBadgesFromQuizzes(quizzesRes.data.quizzes).map((badge) => {
+          const activityTime = badge.earnedAtMs;
+          return {
+            id: `derived-badge-${badge.id}-${activityTime}`,
+            type: 'badge',
+            title: `Earned ${badge.title}`,
+            subtitle: badge.description,
+            time: formatTimeAgo(activityTime),
+            date: getDateLabel(activityTime),
+            timestamp: new Date(activityTime),
+            icon: badge.icon,
+            color: ['#FFD700', '#F59E0B'],
+          };
+        });
+
+        derivedBadgeEvents.forEach((event) => allActivities.push(event));
       }
 
       // Add achievements (achievementsRes.data is { achievements })
       if (achievementsRes.data?.achievements) {
+        const existingBadgeTitles = new Set(
+          allActivities
+            .filter((a) => a.type === 'badge')
+            .map((a) => String(a.title || '').toLowerCase())
+        );
+
         achievementsRes.data.achievements.forEach((achievement, index) => {
+          const activityTime = achievement.earnedAt || achievement.createdAt;
+          if (!activityTime) return;
+
+           const badgeTitle = `Earned ${achievement.title || 'Badge'}`;
+           const badgeTitleKey = badgeTitle.toLowerCase();
+           if (existingBadgeTitles.has(badgeTitleKey)) return;
+
           allActivities.push({
             id: `badge-${index}`,
             type: 'badge',
-            title: `Earned ${achievement.title}`,
+            title: badgeTitle,
             subtitle: achievement.description,
-            time: formatTimeAgo(achievement.earnedAt),
-            date: getDateLabel(achievement.earnedAt),
-            timestamp: new Date(achievement.earnedAt),
+            time: formatTimeAgo(activityTime),
+            date: getDateLabel(activityTime),
+            timestamp: new Date(activityTime),
             icon: '🏆',
             color: ['#FFD700', '#FFA000'],
+          });
+
+          existingBadgeTitles.add(badgeTitleKey);
+        });
+      }
+
+      // Add recitation attempts (independent dynamic events).
+      if (recitationsRes.data?.recitations) {
+        recitationsRes.data.recitations.forEach((recitation, index) => {
+          const activityTime = recitation.createdAt;
+          if (!activityTime) return;
+
+          allActivities.push({
+            id: `recitation-${index}`,
+            type: 'recitation',
+            title: `Recited ${getLevelLabel(recitation.levelId, recitation.module)}`,
+            subtitle: `Overall: ${Math.round(recitation.overallScore || 0)}%`,
+            time: formatTimeAgo(activityTime),
+            date: getDateLabel(activityTime),
+            timestamp: new Date(activityTime),
+            icon: '🎤',
+            color: ['#0284C7', '#0EA5E9'],
           });
         });
       }
 
       // Sort by timestamp (newest first)
-      allActivities.sort((a, b) => b.timestamp - a.timestamp);
+      allActivities.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
       // Calculate stats
-      const lessonCount = allActivities.filter(a => a.type === 'lesson').length;
+      const lessonCount = Number(progressRes.data?.summary?.completedLessons || 0);
       const badgeCount = allActivities.filter(a => a.type === 'badge').length;
 
       setStats({
@@ -273,16 +463,6 @@ const ActivityTimeline = ({ route }) => {
             </View>
           ))
           )}
-        </View>
-
-        {/* Load More */}
-        <View style={styles.loadMoreContainer}>
-          <LinearGradient
-            colors={['#0A7D4F', '#15B872']}
-            style={styles.loadMoreButton}
-          >
-            <Text style={styles.loadMoreText}>Load More Activities</Text>
-          </LinearGradient>
         </View>
 
       </ScrollView>
@@ -451,27 +631,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
     opacity: 0.85,
-  },
-  loadMoreContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
-  loadMoreButton: {
-    paddingVertical: 15,
-    paddingHorizontal: 40,
-    borderRadius: 25,
-    elevation: 6,
-    shadowColor: '#0A7D4F',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-  },
-  loadMoreText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.3,
   },
 });
 

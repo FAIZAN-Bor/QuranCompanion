@@ -2,7 +2,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
-const TajweedRuleItem = ({ rule, score }) => {
+const TajweedRuleItem = ({ rule, score, fulfilled, totalChecks }) => {
   const getColor = (s) => {
     if (s >= 80) return '#0A7D4F';
     if (s >= 60) return '#FFA726';
@@ -31,12 +31,23 @@ const TajweedRuleItem = ({ rule, score }) => {
 
   const color = getColor(score);
   const bgColor = getBgColor(score);
+  const statusKnown = typeof fulfilled === 'boolean';
+  const fulfilledText = fulfilled ? 'Fulfilled' : 'Not Fulfilled';
+  const fulfilledColor = fulfilled ? '#0A7D4F' : '#E53935';
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
       <Text style={styles.icon}>{getIcon(rule)}</Text>
       <View style={styles.info}>
         <Text style={styles.ruleName}>{rule}</Text>
+        {statusKnown && (
+          <View style={styles.statusRow}>
+            <Text style={[styles.statusText, { color: fulfilledColor }]}>{fulfilledText}</Text>
+            {typeof totalChecks === 'number' && totalChecks > 0 && (
+              <Text style={styles.checksText}>{totalChecks} check{totalChecks === 1 ? '' : 's'}</Text>
+            )}
+          </View>
+        )}
         <View style={styles.barContainer}>
           <View style={[styles.bar, { width: `${Math.min(score, 100)}%`, backgroundColor: color }]} />
         </View>
@@ -67,6 +78,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#333',
     marginBottom: 4,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginRight: 8,
+  },
+  checksText: {
+    fontSize: 11,
+    color: '#666',
+    fontWeight: '600',
   },
   barContainer: {
     height: 6,

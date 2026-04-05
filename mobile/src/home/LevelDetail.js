@@ -10,25 +10,238 @@ import {
   Image,
   Alert
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import progressService from '../services/progressService';
 
 const LevelDetail = ({ route, navigation }) => {
   const { level } = route.params;
-  const lessons = level.lessons || [];
+  const lessons = React.useMemo(() => level.lessons || [], [level.lessons]);
   const [completing, setCompleting] = React.useState(false);
+  const [resolvedLessons, setResolvedLessons] = React.useState(lessons);
+  const [levelProgressPercent, setLevelProgressPercent] = React.useState(Number(level.progress || 0));
+  const [unitsLabel, setUnitsLabel] = React.useState('Lessons');
+  const [completedUnits, setCompletedUnits] = React.useState(0);
+  const [totalUnits, setTotalUnits] = React.useState(lessons.length);
 
-  const completedCount = lessons.filter(l => l.completed).length;
-  const totalCount = lessons.length;
+  const getQaidaLevelAliases = (value) => {
+    const aliases = new Set();
+    const raw = String(value || '').toLowerCase();
+    const match = raw.match(/qaida(?:_level)?_(\d+)/);
+    const levelNo = match ? Number(match[1]) : Number(level.levelNumber || 0);
+    if (levelNo) {
+      aliases.add(`qaida_${levelNo}`);
+      aliases.add(`qaida_level_${levelNo}`);
+    }
+    if (raw) aliases.add(raw);
+    return aliases;
+  };
+
+  const getSurahAliases = (lesson) => {
+    const aliases = new Set();
+    const contentId = String(lesson?.content?._id || lesson?.id || '').toLowerCase();
+    const surahNumber = Number(lesson?.content?.number || 0);
+    if (contentId) aliases.add(contentId);
+    if (surahNumber) aliases.add(`surah_${surahNumber}`);
+    return aliases;
+  };
+
+  const getTotalAyahs = (lesson) => {
+    const content = lesson?.content || {};
+    const totalAyahs = Number(content?.totalAyahs || 0);
+    if (totalAyahs > 0) return totalAyahs;
+    if (Array.isArray(content?.ayahs) && content.ayahs.length > 0) return content.ayahs.length;
+    if (Array.isArray(content?.verses) && content.verses.length > 0) return content.verses.length;
+    return 0;
+  };
+
+  const syncLessonProgress = async () => {
+    try {
+      const response = await progressService.getProgress({ module: level.module });
+      const progressRecords = response?.data?.progress || [];
+
+      if (level.module === 'Qaida') {
+        const aliases = getQaidaLevelAliases(level.id);
+
+        const completedChars = new Set(
+          progressRecords
+            .filter((record) => {
+              const levelId = String(record?.levelId || '').toLowerCase();
+              const lessonId = String(record?.lessonId || '').toLowerCase();
+              return (
+                record?.status === 'completed' &&
+                lessonId.startsWith('character_') &&
+                aliases.has(levelId)
+              );
+            })
+            .map((record) => String(record.lessonId).toLowerCase())
+        );
+
+        const updatedLessons = lessons.map((lesson) => {
+          const totalCharacters = Array.isArray(lesson?.content?.characters)
+            ? lesson.content.characters.length
+            : 0;
+          const doneCharacters = totalCharacters > 0
+            ? Array.from({ length: totalCharacters }).filter((_, idx) =>
+                completedChars.has(`character_${idx + 1}`)
+              ).length
+            : (lesson.completed ? 1 : 0);
+          const lessonPercent = totalCharacters > 0
+            ? Math.round((doneCharacters / totalCharacters) * 100)
+            : (lesson.completed ? 100 : 0);
+
+          return {
+            ...lesson,
+            completed: lessonPercent >= 100,
+            lessonProgress: lessonPercent,
+            completedUnits: doneCharacters,
+            totalUnits: totalCharacters || 1,
+          };
+        });
+
+        const totalCharactersAll = updatedLessons.reduce((sum, lesson) => sum + Number(lesson.totalUnits || 0), 0);
+        const doneCharactersAll = updatedLessons.reduce((sum, lesson) => sum + Number(lesson.completedUnits || 0), 0);
+
+        setResolvedLessons(updatedLessons);
+        setUnitsLabel('Characters');
+        setTotalUnits(totalCharactersAll);
+        setCompletedUnits(doneCharactersAll);
+        setLevelProgressPercent(totalCharactersAll > 0 ? Math.round((doneCharactersAll / totalCharactersAll) * 100) : 0);
+        return;
+      }
+
+      if (level.module === 'Quran') {
+        const updatedLessons = lessons.map((lesson) => {
+          const aliases = getSurahAliases(lesson);
+          const totalAyahs = getTotalAyahs(lesson);
+
+          const completedAyahIds = new Set(
+            progressRecords
+              .filter((record) => {
+                const levelId = String(record?.levelId || '').toLowerCase();
+                const lessonId = String(record?.lessonId || '').toLowerCase();
+                return (
+                  record?.status === 'completed' &&
+                  lessonId.startsWith('ayah_') &&
+                  aliases.has(levelId)
+                );
+              })
+              .map((record) => String(record.lessonId).toLowerCase())
+          );
+
+          const directSurahCompleted = progressRecords.some((record) => {
+            const levelId = String(record?.levelId || '').toLowerCase();
+            const lessonId = String(record?.lessonId || '').toLowerCase();
+            return (
+              record?.status === 'completed' &&
+              levelId === String(level.id || '').toLowerCase() &&
+              lessonId === String(lesson.id || '').toLowerCase()
+            );
+          });
+
+          const doneAyahs = totalAyahs > 0
+            ? Math.min(totalAyahs, completedAyahIds.size)
+            : (directSurahCompleted ? 1 : 0);
+          const lessonPercent = totalAyahs > 0
+            ? Math.round((doneAyahs / totalAyahs) * 100)
+            : (directSurahCompleted ? 100 : 0);
+
+          return {
+            ...lesson,
+            completed: lessonPercent >= 100,
+            lessonProgress: lessonPercent,
+            completedUnits: doneAyahs,
+            totalUnits: totalAyahs || 1,
+          };
+        });
+
+        const totalAyahsAll = updatedLessons.reduce((sum, lesson) => sum + Number(lesson.totalUnits || 0), 0);
+        const doneAyahsAll = updatedLessons.reduce((sum, lesson) => sum + Number(lesson.completedUnits || 0), 0);
+
+        setResolvedLessons(updatedLessons);
+        setUnitsLabel('Ayahs');
+        setTotalUnits(totalAyahsAll);
+        setCompletedUnits(doneAyahsAll);
+        setLevelProgressPercent(totalAyahsAll > 0 ? Math.round((doneAyahsAll / totalAyahsAll) * 100) : 0);
+        return;
+      }
+
+      const fallbackLessons = lessons.map((lesson) => ({
+        ...lesson,
+        completedUnits: lesson.completed ? 1 : 0,
+        totalUnits: 1,
+        lessonProgress: lesson.completed ? 100 : 0
+      }));
+      setResolvedLessons(fallbackLessons);
+      setUnitsLabel('Lessons');
+      setTotalUnits(fallbackLessons.length);
+      setCompletedUnits(fallbackLessons.filter((lesson) => lesson.completed).length);
+      setLevelProgressPercent(Number(level.progress || 0));
+    } catch (error) {
+      console.warn('Failed to sync level completion details:', error?.message || error);
+    }
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      syncLessonProgress();
+    }, [level.id, level.module])
+  );
+
+  const completedCount = resolvedLessons.filter((l) => l.completed).length;
+  const totalCount = resolvedLessons.length;
   const allCompleted = totalCount > 0 && completedCount === totalCount;
 
   const handleCompleteLevel = async () => {
     try {
       setCompleting(true);
-      const uncompletedLessons = lessons.filter(l => !l.completed);
+      const uncompletedLessons = resolvedLessons.filter(l => !l.completed);
       
       for (const lesson of uncompletedLessons) {
+        if (level.module === 'Qaida') {
+          const totalCharacters = Array.isArray(lesson?.content?.characters)
+            ? lesson.content.characters.length
+            : 0;
+
+          if (totalCharacters > 0) {
+            for (let i = 1; i <= totalCharacters; i++) {
+              await progressService.updateLessonProgress({
+                module: level.module,
+                levelId: level.id,
+                lessonId: `character_${i}`,
+                contentId: lesson.content?._id || null,
+                status: 'completed',
+                completionPercentage: 100,
+                accuracy: 100,
+                timeSpent: 15,
+              });
+            }
+            continue;
+          }
+        }
+
+        if (level.module === 'Quran') {
+          const totalAyahs = getTotalAyahs(lesson);
+          const surahLevelId = lesson?.content?._id || `surah_${lesson?.content?.number || 1}`;
+
+          if (totalAyahs > 0) {
+            for (let i = 1; i <= totalAyahs; i++) {
+              await progressService.updateLessonProgress({
+                module: level.module,
+                levelId: surahLevelId,
+                lessonId: `ayah_${i}`,
+                contentId: lesson.content?._id || null,
+                status: 'completed',
+                completionPercentage: 100,
+                accuracy: 100,
+                timeSpent: 15,
+              });
+            }
+            continue;
+          }
+        }
+
         await progressService.updateLessonProgress({
           module: level.module,
           levelId: level.id,
@@ -37,9 +250,11 @@ const LevelDetail = ({ route, navigation }) => {
           status: 'completed',
           completionPercentage: 100,
           accuracy: 100,
-          timeSpent: 60
+          timeSpent: 60,
         });
       }
+
+      await syncLessonProgress();
       
       Alert.alert('Lessons Completed!', 'Lessons have been marked as complete. The quiz is now unlocked.\n\nPlease go back and refresh the Progress Map to see updates.', [
         { text: 'OK', onPress: () => navigation.goBack() }
@@ -78,35 +293,45 @@ const LevelDetail = ({ route, navigation }) => {
     navigation.navigate('QuizScreen', { level });
   };
 
+  const getLessonDisplayTitle = (lesson, index) => {
+    const rawTitle =
+      lesson?.title ||
+      lesson?.name ||
+      lesson?.content?.name ||
+      lesson?.content?.title ||
+      lesson?.content?.lesson ||
+      `Lesson ${index + 1}`;
+    const title = String(rawTitle || '').trim();
+    return title || `Lesson ${index + 1}`;
+  };
+
   const renderLesson = (lesson, index) => {
+    const lessonKey = String(
+      lesson?.id ||
+      lesson?.content?._id ||
+      `${level.id || level.module || 'level'}_lesson_${index + 1}`
+    );
+    const displayTitle = getLessonDisplayTitle(lesson, index);
+    const statusText = lesson?.completed
+      ? '✓ Completed'
+      : `${lesson?.completedUnits || 0}/${lesson?.totalUnits || 0} ${unitsLabel.toLowerCase()} completed`;
+
     return (
       <TouchableOpacity
-        key={lesson.id}
-        style={[styles.lessonCard, lesson.completed && styles.lessonCompleted]}
+        key={lessonKey}
+        style={[styles.lessonCard, lesson?.completed && styles.lessonCompleted]}
         onPress={() => handleLessonPress(lesson)}
         activeOpacity={0.8}
       >
-        <LinearGradient
-          colors={lesson.completed ? ['#E8F5E9', '#C8E6C9'] : ['#FFFFFF', '#F5F5F5']}
-          style={styles.lessonGradient}
-        >
-          <View style={styles.lessonNumber}>
-            <Text style={styles.lessonNumberText}>{index + 1}</Text>
-          </View>
-          
-          <View style={styles.lessonInfo}>
-            <Text style={styles.lessonTitle}>{lesson.title}</Text>
-            <Text style={styles.lessonStatus}>
-              {lesson.completed ? '✓ Completed' : 'Not Started'}
-            </Text>
-          </View>
-
-          {lesson.completed ? (
-            <Image source={require('../assests/coin.png')} style={styles.checkIcon} />
-          ) : (
-            <Image source={require('../assests/bell1.png')} style={styles.playIcon} />
+        <View style={[styles.lessonGradient, lesson?.completed ? styles.lessonGradientCompleted : styles.lessonGradientPending]}>
+          <Text style={styles.lessonTitle}>{displayTitle}</Text>
+          <Text style={styles.lessonStatus}>{statusText}</Text>
+          {!lesson?.completed && (
+            <View style={styles.lessonMiniProgressTrack}>
+              <View style={[styles.lessonMiniProgressFill, { width: `${Math.max(0, Math.min(100, Number(lesson.lessonProgress || 0)))}%` }]} />
+            </View>
           )}
-        </LinearGradient>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -132,13 +357,13 @@ const LevelDetail = ({ route, navigation }) => {
             <View style={styles.progressBar}>
               <LinearGradient
                 colors={['#0A7D4F', '#15B872']}
-                style={[styles.progressFill, { width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }]}
+                style={[styles.progressFill, { width: `${Math.max(0, Math.min(100, Number(levelProgressPercent || 0)))}%` }]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
               />
             </View>
             <Text style={styles.progressText}>
-              {completedCount} / {totalCount} Lessons Completed
+              {completedUnits} / {totalUnits} {unitsLabel} Completed
             </Text>
           </View>
         </View>
@@ -151,8 +376,8 @@ const LevelDetail = ({ route, navigation }) => {
         >
           <Text style={styles.sectionTitle}>Lessons</Text>
 
-          {lessons.length > 0 ? (
-            lessons.map((lesson, index) => renderLesson(lesson, index))
+          {resolvedLessons.length > 0 ? (
+            resolvedLessons.map((lesson, index) => renderLesson(lesson, index))
           ) : (
             <View style={styles.emptyLessonsCard}>
               <Text style={styles.emptyLessonsTitle}>Coming Soon</Text>
@@ -290,7 +515,7 @@ const styles = StyleSheet.create({
   lessonCard: {
     marginBottom: 12,
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: 'visible',
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -302,9 +527,18 @@ const styles = StyleSheet.create({
     borderColor: '#0A7D4F',
   },
   lessonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    minHeight: 88,
+    justifyContent: 'center',
     padding: 16,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 14,
+  },
+  lessonGradientCompleted: {
+    backgroundColor: '#E8F5E9',
+  },
+  lessonGradientPending: {
+    backgroundColor: '#FFFFFF',
   },
   lessonNumber: {
     width: 40,
@@ -324,14 +558,34 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   lessonTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#333',
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#111827',
     marginBottom: 4,
   },
   lessonStatus: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 13,
+    color: '#374151',
+    fontWeight: '600',
+  },
+  lessonRightGlyph: {
+    fontSize: 20,
+    color: '#0A7D4F',
+    fontWeight: '800',
+    marginLeft: 10,
+  },
+  lessonMiniProgressTrack: {
+    marginTop: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E5E7EB',
+    overflow: 'hidden',
+    width: '90%',
+  },
+  lessonMiniProgressFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: '#10B981',
   },
   emptyLessonsCard: {
     backgroundColor: '#FFFFFF',

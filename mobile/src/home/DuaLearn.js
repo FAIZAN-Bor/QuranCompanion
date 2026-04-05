@@ -73,16 +73,6 @@ const DuaLearn = ({ route, navigation }) => {
             </View>
             <Text style={styles.purpose}>✨ {item.category}</Text>
           </View>
-
-          {/* Play Button */}
-          <View style={styles.playButton}>
-            <LinearGradient
-              colors={['#0A7D4F', '#15B872']}
-              style={styles.playGradient}
-            >
-              <Image style={styles.playIcon} source={require('../assests/play.png')} />
-            </LinearGradient>
-          </View>
         </View>
       </LinearGradient>
     </TouchableOpacity>

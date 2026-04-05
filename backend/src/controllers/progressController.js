@@ -60,6 +60,51 @@ const updateLessonProgress = async (req, res, next) => {
       accuracy
     } = req.body;
 
+    const handleLessonCompletionSideEffects = async (progressDoc) => {
+      const user = await User.findById(req.user.id);
+      const isFirstLesson = user.totalLessonsCompleted === 0;
+      const coins = calculateLessonCoins(accuracy || 0, timeSpent || 0, isFirstLesson);
+
+      progressDoc.coinsEarned = coins;
+      await awardCoins(
+        req.user.id,
+        'lesson_complete',
+        coins,
+        `Completed ${module} lesson: ${lessonId}`,
+        { model: 'Progress', id: progressDoc._id }
+      );
+
+      // Update user stats
+      user.totalLessonsCompleted += 1;
+      await user.save();
+
+      // Check for achievements
+      const achievements = await checkAchievements(req.user.id, {
+        type: 'lesson_complete',
+        data: { module, levelId, lessonId }
+      });
+
+      // Send notification
+      if (achievements.length > 0) {
+        await Notification.createNotification(
+          req.user.id,
+          'achievement',
+          'New Achievement!',
+          `You earned: ${achievements.map(a => a.title).join(', ')}`,
+          { icon: 'trophy', priority: 'high' }
+        );
+      }
+
+      // Notify parents about lesson completion
+      await notifyParents(
+        req.user.id,
+        'level_unlock',
+        'Lesson Completed!',
+        `has completed a ${module} lesson in ${levelId} with ${accuracy}% accuracy.`,
+        { module, levelId, lessonId, accuracy }
+      );
+    };
+
     // Find or create progress record
     let progress = await Progress.findOne({
       user: req.user.id,
@@ -79,8 +124,14 @@ const updateLessonProgress = async (req, res, next) => {
         completionPercentage: completionPercentage || 0,
         timeSpent: timeSpent || 0,
         accuracy: accuracy || 0,
-        startedAt: new Date()
+        startedAt: new Date(),
+        completedAt: status === 'completed' ? new Date() : null,
       });
+
+      if (status === 'completed') {
+        await handleLessonCompletionSideEffects(progress);
+        await progress.save();
+      }
     } else {
       // Update existing progress
       if (status) progress.status = status;
@@ -92,50 +143,7 @@ const updateLessonProgress = async (req, res, next) => {
 
       if (status === 'completed' && !progress.completedAt) {
         progress.completedAt = new Date();
-        
-        // Award coins for lesson completion
-        const user = await User.findById(req.user.id);
-        const isFirstLesson = user.totalLessonsCompleted === 0;
-        const coins = calculateLessonCoins(accuracy || 0, timeSpent || 0, isFirstLesson);
-        
-        progress.coinsEarned = coins;
-        await awardCoins(
-          req.user.id,
-          'lesson_complete',
-          coins,
-          `Completed ${module} lesson: ${lessonId}`,
-          { model: 'Progress', id: progress._id }
-        );
-
-        // Update user stats
-        user.totalLessonsCompleted += 1;
-        await user.save();
-
-        // Check for achievements
-        const achievements = await checkAchievements(req.user.id, {
-          type: 'lesson_complete',
-          data: { module, levelId, lessonId }
-        });
-
-        // Send notification
-        if (achievements.length > 0) {
-          await Notification.createNotification(
-            req.user.id,
-            'achievement',
-            'New Achievement!',
-            `You earned: ${achievements.map(a => a.title).join(', ')}`,
-            { icon: 'trophy', priority: 'high' }
-          );
-        }
-
-        // Notify parents about lesson completion
-        await notifyParents(
-          req.user.id,
-          'level_unlock',
-          'Lesson Completed!',
-          `has completed a ${module} lesson in ${levelId} with ${accuracy}% accuracy.`,
-          { module, levelId, lessonId, accuracy }
-        );
+        await handleLessonCompletionSideEffects(progress);
       }
 
       await progress.save();

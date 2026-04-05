@@ -3,9 +3,12 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIn
 import LinearGradient from 'react-native-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { launchImageLibrary } from 'react-native-image-picker';
+import Clipboard from '@react-native-clipboard/clipboard';
 import parentService from '../services/parentService';
 import userService from '../services/userService';
 import authService from '../services/authService';
+import { showAppToast } from '../utils/toast';
+import CustomModal from '../Setting/CustomModal';
 
 const ParentProfile = ({ navigation }) => {
   const [parentData, setParentData] = useState(null);
@@ -19,12 +22,17 @@ const ParentProfile = ({ navigation }) => {
   const [viewChildModal, setViewChildModal] = useState(false);
   const [selectedChild, setSelectedChild] = useState(null);
   
+  // Custom Modal for Logout/Delete
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [confirmModalType, setConfirmModalType] = useState(null); // 'logout' or 'delete'
+  
   // Form states
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [childEmail, setChildEmail] = useState('');
   const [linkCode, setLinkCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [modalError, setModalError] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -59,40 +67,58 @@ const ParentProfile = ({ navigation }) => {
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await authService.logout();
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Login' }],
-              });
-            } catch (error) {
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Login' }],
-              });
-            }
-          },
-        },
-      ]
-    );
+    setConfirmModalType('logout');
+    setConfirmModalVisible(true);
+  };
+
+  const handleDeleteAccount = () => {
+    setConfirmModalType('delete');
+    setConfirmModalVisible(true);
+  };
+
+  const handleConfirmAction = async () => {
+    setConfirmModalVisible(false);
+    
+    if (confirmModalType === 'logout') {
+      try {
+        await authService.logout();
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Login' }],
+        });
+      } catch (error) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Login' }],
+        });
+      }
+    } else if (confirmModalType === 'delete') {
+      try {
+        setIsSubmitting(true);
+        const response = await userService.deleteAccount();
+        if (response.success) {
+          await authService.logout();
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Login' }],
+          });
+        }
+      } catch (error) {
+        Alert.alert('Error', error.message || 'Failed to delete account');
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
   };
 
   const handleEditProfile = async () => {
+    setModalError('');
     if (!editName.trim()) {
-      Alert.alert('Error', 'Name cannot be empty');
+      setModalError('Name cannot be empty');
       return;
     }
     if (!editEmail.trim()) {
-      Alert.alert('Error', 'Email cannot be empty');
+      setModalError('Email cannot be empty');
       return;
     }
 
@@ -112,7 +138,7 @@ const ParentProfile = ({ navigation }) => {
         Alert.alert('Success', 'Profile updated successfully!');
       }
     } catch (error) {
-      Alert.alert('Error', error.message || 'Failed to update profile');
+      setModalError(error.message || 'Failed to update profile');
     } finally {
       setIsSubmitting(false);
     }
@@ -159,9 +185,21 @@ const ParentProfile = ({ navigation }) => {
     });
   };
 
+  const handleCopyLinkCode = () => {
+    if (linkCode) {
+      Clipboard.setString(linkCode);
+      showAppToast({
+        type: 'success',
+        title: 'Copied!',
+        message: 'Link code copied to clipboard',
+      });
+    }
+  };
+
   const handleAddChild = async () => {
+    setModalError('');
     if (!childEmail.trim()) {
-      Alert.alert('Error', 'Please enter child email');
+      setModalError('Please enter child email');
       return;
     }
 
@@ -171,18 +209,9 @@ const ParentProfile = ({ navigation }) => {
       
       if (response.success) {
         setLinkCode(response.data.linkCode);
-        Alert.alert(
-          'Link Code Generated!',
-          `Share this code with your child:\n\n${response.data.linkCode}\n\nThe code expires in 24 hours. Your child needs to enter this code in their app to link their account.`,
-          [{ text: 'OK', onPress: () => {
-            setAddChildModal(false);
-            setChildEmail('');
-            setLinkCode('');
-          }}]
-        );
       }
     } catch (error) {
-      Alert.alert('Error', error.message || 'Failed to add child');
+      setModalError(error.message || 'Failed to add child');
     } finally {
       setIsSubmitting(false);
     }
@@ -282,7 +311,10 @@ const ParentProfile = ({ navigation }) => {
             <Text style={styles.profileName}>{parentData?.name || 'Parent'}</Text>
             <Text style={styles.profileEmail}>{parentData?.email || ''}</Text>
 
-            <TouchableOpacity onPress={() => setEditProfileModal(true)} style={styles.editButton}>
+            <TouchableOpacity onPress={() => {
+              setModalError('');
+              setEditProfileModal(true)
+            }} style={styles.editButton}>
               <LinearGradient
                 colors={['#0A7D4F', '#15B872']}
                 style={styles.editButtonGradient}
@@ -308,11 +340,6 @@ const ParentProfile = ({ navigation }) => {
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>👤 Role</Text>
               <Text style={styles.infoValue}>Parent</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>📅 Member Since</Text>
-              <Text style={styles.infoValue}>{formatDate(parentData?.createdAt)}</Text>
             </View>
           </LinearGradient>
         </View>
@@ -383,7 +410,12 @@ const ParentProfile = ({ navigation }) => {
           )}
 
           {/* Add Child Button */}
-          <TouchableOpacity onPress={() => setAddChildModal(true)}>
+          <TouchableOpacity onPress={() => {
+            setModalError('');
+            setChildEmail('');
+            setLinkCode('');
+            setAddChildModal(true);
+          }}>
             <LinearGradient
               colors={['#1976D2', '#42A5F5']}
               style={styles.addChildButton}
@@ -394,44 +426,23 @@ const ParentProfile = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Settings Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Settings</Text>
-          
-          <LinearGradient
-            colors={['#FFFFFF', '#F1F8E9']}
-            style={styles.settingsCard}
-          >
-            <TouchableOpacity style={styles.settingRow}>
-              <Text style={styles.settingLabel}>🔔 Notifications</Text>
-              <Text style={styles.settingArrow}>›</Text>
-            </TouchableOpacity>
-            <View style={styles.divider} />
-            <TouchableOpacity style={styles.settingRow}>
-              <Text style={styles.settingLabel}>🔒 Privacy</Text>
-              <Text style={styles.settingArrow}>›</Text>
-            </TouchableOpacity>
-            <View style={styles.divider} />
-            <TouchableOpacity style={styles.settingRow}>
-              <Text style={styles.settingLabel}>❓ Help & Support</Text>
-              <Text style={styles.settingArrow}>›</Text>
-            </TouchableOpacity>
-            <View style={styles.divider} />
-            <TouchableOpacity style={styles.settingRow}>
-              <Text style={styles.settingLabel}>ℹ️ About</Text>
-              <Text style={styles.settingArrow}>›</Text>
-            </TouchableOpacity>
-          </LinearGradient>
-        </View>
-
-        {/* Logout Button */}
+        {/* Action Buttons */}
         <View style={styles.section}>
           <TouchableOpacity onPress={handleLogout}>
             <LinearGradient
-              colors={['#E53935', '#EF5350']}
-              style={styles.logoutButton}
+              colors={['#FFB74D', '#F57C00']}
+              style={styles.actionButton}
             >
               <Text style={styles.logoutText}>Logout</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+          
+          <TouchableOpacity onPress={handleDeleteAccount} style={{ marginTop: 15 }}>
+            <LinearGradient
+              colors={['#E53935', '#D32F2F']}
+              style={styles.actionButton}
+            >
+              <Text style={styles.logoutText}>Delete Account</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -440,16 +451,37 @@ const ParentProfile = ({ navigation }) => {
 
       </ScrollView>
 
+      {/* Custom Modal for Logout/Delete Confirmation */}
+      {(confirmModalType === "logout" || confirmModalType === "delete") && (
+        <CustomModal
+          visible={confirmModalVisible}
+          title={confirmModalType === "logout" ? "Logout" : "Delete Account"}
+          message={confirmModalType === "logout" 
+                    ? "Are you sure you want to logout?" 
+                    : "This action cannot be undone. Continue?"}
+          onCancel={() => setConfirmModalVisible(false)}
+          onConfirm={handleConfirmAction}
+          confirmText={confirmModalType === "logout" ? "Yes, Logout" : "Delete"}
+        />
+      )}
+
       {/* Edit Profile Modal */}
       <Modal
         visible={editProfileModal}
         transparent={true}
         animationType="slide"
-        onRequestClose={() => setEditProfileModal(false)}
+        onRequestClose={() => {
+          setEditProfileModal(false);
+          setModalError('');
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Edit Profile</Text>
+
+            {modalError ? (
+              <Text style={styles.inlineError}>{modalError}</Text>
+            ) : null}
             
             <Text style={styles.inputLabel}>Name</Text>
             <TextInput
@@ -474,7 +506,10 @@ const ParentProfile = ({ navigation }) => {
             <View style={styles.modalButtons}>
               <TouchableOpacity 
                 style={styles.cancelButton}
-                onPress={() => setEditProfileModal(false)}
+                onPress={() => {
+                  setEditProfileModal(false);
+                  setModalError('');
+                }}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -500,48 +535,90 @@ const ParentProfile = ({ navigation }) => {
         visible={addChildModal}
         transparent={true}
         animationType="slide"
-        onRequestClose={() => setAddChildModal(false)}
+        onRequestClose={() => {
+          setAddChildModal(false);
+          setChildEmail('');
+          setLinkCode('');
+          setModalError('');
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add Child</Text>
-            <Text style={styles.modalSubtitle}>
-              Enter your child's email address to generate a link code
-            </Text>
+            <Text style={styles.modalTitle}>{linkCode ? "Link Code Generated!" : "Add Child"}</Text>
             
-            <Text style={styles.inputLabel}>Child's Email</Text>
-            <TextInput
-              style={styles.input}
-              value={childEmail}
-              onChangeText={setChildEmail}
-              placeholder="child@example.com"
-              placeholderTextColor="#6C8A7A"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
+            {modalError ? (
+              <Text style={styles.inlineError}>{modalError}</Text>
+            ) : null}
+
+            {linkCode ? (
+              <View style={styles.linkCodeContainer}>
+                <Text style={styles.linkCodeLabel}>Your Link Code:</Text>
+                
+                <TouchableOpacity activeOpacity={0.7} onPress={handleCopyLinkCode} style={styles.linkCodeTouchBox}>
+                  <Text style={styles.linkCodeValueText}>{linkCode}</Text>
+                  <Text style={styles.linkCodeCopyIcon}>📋</Text>
+                </TouchableOpacity>
+                <Text style={styles.linkCodeHint}>
+                  Share this code with your child. They must enter it in their app to link their account. The code expires in 24 hours. (Tap code to copy)
+                </Text>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.modalSubtitle}>
+                  Enter your child's email address to generate a link code
+                </Text>
+                <Text style={styles.inputLabel}>Child's Email</Text>
+                <TextInput
+                  style={styles.input}
+                  value={childEmail}
+                  onChangeText={setChildEmail}
+                  placeholder="child@example.com"
+                  placeholderTextColor="#6C8A7A"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </>
+            )}
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={styles.cancelButton}
-                onPress={() => {
-                  setAddChildModal(false);
-                  setChildEmail('');
-                }}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.saveButton}
-                onPress={handleAddChild}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.saveButtonText}>Generate Code</Text>
-                )}
-              </TouchableOpacity>
+              {linkCode ? (
+                <TouchableOpacity 
+                  style={[styles.saveButton, { flex: 1 }]}
+                  onPress={() => {
+                    setAddChildModal(false);
+                    setChildEmail('');
+                    setLinkCode('');
+                    setModalError('');
+                  }}
+                >
+                  <Text style={styles.saveButtonText}>Done</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <TouchableOpacity 
+                    style={styles.cancelButton}
+                    onPress={() => {
+                      setAddChildModal(false);
+                      setChildEmail('');
+                      setModalError('');
+                    }}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.saveButton}
+                    onPress={handleAddChild}
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.saveButtonText}>Generate Code</Text>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           </View>
         </View>
@@ -900,32 +977,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.3,
   },
-  settingsCard: {
-    borderRadius: 15,
-    padding: 15,
-    elevation: 6,
-    shadowColor: '#0A7D4F',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 15,
-  },
-  settingLabel: {
-    fontSize: 15,
-    color: '#0A7D4F',
-    fontWeight: '700',
-  },
-  settingArrow: {
-    fontSize: 24,
-    color: '#0A7D4F',
-    fontWeight: '300',
-  },
-  logoutButton: {
+  actionButton: {
     paddingVertical: 16,
     borderRadius: 25,
     alignItems: 'center',
@@ -988,6 +1040,57 @@ const styles = StyleSheet.create({
     color: '#333',
     backgroundColor: '#F9F9F9',
     marginBottom: 20,
+  },
+  inlineError: {
+    color: '#E53935',
+    textAlign: 'center',
+    marginBottom: 15,
+    fontWeight: '500',
+    backgroundColor: '#FFEBEE',
+    padding: 10,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  linkCodeContainer: {
+    backgroundColor: '#F1F8E9',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  linkCodeLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0A7D4F',
+    marginBottom: 10,
+  },
+  linkCodeTouchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+    padding: 15,
+    width: '100%',
+    marginBottom: 15,
+  },
+  linkCodeValueText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#212121',
+    letterSpacing: 2,
+    marginRight: 10,
+  },
+  linkCodeCopyIcon: {
+    fontSize: 20,
+  },
+  linkCodeHint: {
+    fontSize: 13,
+    color: '#388E3C',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   modalButtons: {
     flexDirection: 'row',

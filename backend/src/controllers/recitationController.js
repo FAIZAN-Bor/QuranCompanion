@@ -106,27 +106,51 @@ const analyzeRecitation = async (req, res) => {
     let tajweedScore = 0;
     const tajweedAnalysis = [];
     if (aiResult.tajweed_analysis) {
-      // AI returns: maddScore, ghunnahScore, shaddahScore, idghamScore, ikhfaScore, iqlabScore, izharScore, qalqalahScore, overall_score
-      const ruleNameMap = {
-        maddScore: 'Madd',
-        ghunnahScore: 'Ghunnah',
-        shaddahScore: 'Shaddah',
-        idghamScore: 'Idgham',
-        ikhfaScore: 'Ikhfa',
-        iqlabScore: 'Iqlab',
-        izharScore: 'Izhar',
-        qalqalahScore: 'Qalqalah'
-      };
+      // Include only applicable rules from AI metadata and mark whether each rule was fulfilled.
+      const step6Tajweed = aiResult.pipeline_steps?.step_6_tajweed || {};
+      const ruleTotals = step6Tajweed.rule_totals || {};
+      const detailedRules = step6Tajweed.detailed_rules || {};
+      const hasRuleTotalsMetadata = Object.keys(ruleTotals).length > 0;
 
-      for (const [key, label] of Object.entries(ruleNameMap)) {
-        if (aiResult.tajweed_analysis[key] !== undefined) {
-          const score = aiResult.tajweed_analysis[key];
-          tajweedAnalysis.push({
-            rule: label,
-            score: Math.round(score),
-            details: null
-          });
-        }
+      const tajweedRuleMap = [
+        { scoreKey: 'maddScore', label: 'Madd', detailKey: 'madd' },
+        { scoreKey: 'ghunnahScore', label: 'Ghunnah', detailKey: 'ghunnah' },
+        { scoreKey: 'shaddahScore', label: 'Shaddah', detailKey: 'shaddah' },
+        { scoreKey: 'idghamScore', label: 'Idgham', detailKey: 'idgham' },
+        { scoreKey: 'ikhfaScore', label: 'Ikhfa', detailKey: 'ikhfa' },
+        { scoreKey: 'iqlabScore', label: 'Iqlab', detailKey: 'iqlab' },
+        { scoreKey: 'izharScore', label: 'Izhar', detailKey: 'izhar' },
+        { scoreKey: 'qalqalahScore', label: 'Qalqalah', detailKey: 'qalqalah' },
+        { scoreKey: 'heavyLetterScore', label: 'Heavy Letters', detailKey: 'heavy_letters' }
+      ];
+
+      for (const { scoreKey, label, detailKey } of tajweedRuleMap) {
+        const rawScore = aiResult.tajweed_analysis[scoreKey];
+        const totalChecksRaw = Number(ruleTotals[detailKey]);
+        const totalChecks = Number.isNaN(totalChecksRaw) ? 0 : totalChecksRaw;
+        const applicable = hasRuleTotalsMetadata
+          ? totalChecks > 0
+          : rawScore !== undefined && rawScore !== null;
+        if (!applicable) continue;
+
+        const numericScore = Number(rawScore);
+        const score = Number.isNaN(numericScore) ? 0 : Math.round(numericScore);
+
+        const ruleDetail = detailedRules[detailKey] || {};
+        const fulfilled = typeof ruleDetail.passed === 'boolean'
+          ? ruleDetail.passed
+          : score >= 80;
+
+        tajweedAnalysis.push({
+          rule: label,
+          score,
+          applicable,
+          fulfilled,
+          totalChecks,
+          details: fulfilled
+            ? `Fulfilled in ${totalChecks} check${totalChecks === 1 ? '' : 's'}`
+            : `Not fulfilled in one or more of ${totalChecks} check${totalChecks === 1 ? '' : 's'}`
+        });
       }
 
       tajweedScore = Math.round(aiResult.tajweed_analysis.overall_score || 0);
@@ -136,10 +160,17 @@ const analyzeRecitation = async (req, res) => {
     // Qaida Lessons 1-3: 100% pronunciation (isolated sounds)
     // Qaida Lessons 4-6: 60% pronunciation + 40% tajweed (timing checks)
     // Quran / Qaida 7+:  50% text + 30% pronunciation + 20% tajweed
-    const aiTextAccuracyRaw = Number(aiResult.accuracy_score ?? aiResult.accuracyScore);
-    const textScore = Number.isNaN(aiTextAccuracyRaw)
-      ? Math.round(Math.max(0, 100 - (wordErrorRate * 100)))
-      : Math.round(Math.max(0, Math.min(100, aiTextAccuracyRaw)));
+    
+    let textScore = 0;
+    if (aiResult.text_accuracy !== undefined) {
+      textScore = Math.round(Math.max(0, Math.min(100, aiResult.text_accuracy)));
+    } else {
+      const aiTextAccuracyRaw = Number(aiResult.accuracy_score ?? aiResult.accuracyScore);
+      textScore = Number.isNaN(aiTextAccuracyRaw)
+        ? Math.round(Math.max(0, 100 - (wordErrorRate * 100)))
+        : Math.round(Math.max(0, Math.min(100, aiTextAccuracyRaw)));
+    }
+    
     const lessonNum = extractLessonNumber(levelId, lessonId, module);
     let weightedOverall;
 
@@ -192,29 +223,8 @@ const analyzeRecitation = async (req, res) => {
 
     await recitation.save();
 
-    // Auto-log significant mistakes to the Mistake collection
-    if (mistakes.length > 0 && weightedOverall < 80) {
-      try {
-        const topMistakes = mistakes.slice(0, 3); // Log top 3 mistakes
-        for (const m of topMistakes) {
-          await Mistake.create({
-            user: req.user._id,
-            module,
-            levelId: levelId || `${module.toLowerCase()}_1`,
-            lessonId: lessonId || 'recitation',
-            mistakeType: m.type === 'tajweed' ? 'tajweed' : 'pronunciation',
-            title: `${m.type}: "${m.word || m.expected}"`,
-            description: m.suggestion || `Expected "${m.expected}", got "${m.got}"`,
-            audioUrl: recitation.audioUrl,
-            severity: m.severity,
-            isResolved: false
-          });
-        }
-      } catch (mistakeErr) {
-        console.error('Error logging mistakes:', mistakeErr.message);
-        // Non-critical, don't fail the response
-      }
-    }
+    // Auto-log significant mistakes to the Mistake collection has been disabled
+    // to strictly enforce the "5 attempts before mistake" rule from the client.
 
     // Return results
     res.status(200).json({

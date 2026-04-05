@@ -1,7 +1,7 @@
 // OtpScreen.js
 
 import React, { useRef, useState, useEffect } from 'react';
-import { View, Text, TextInput, Image, TouchableOpacity, StyleSheet, Keyboard, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, Image, TouchableOpacity, StyleSheet, Keyboard, Alert, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useAuth } from '../context/AuthContext';
 import authService from '../services/authService';
@@ -16,6 +16,14 @@ export default function Otp({ navigation, route }) {
   const [isPasswordReset, setIsPasswordReset] = useState(false);
   const { verifyOTP } = useAuth();
   const inputRefs = useRef([]);
+
+  const maskEmail = (value) => {
+    if (!value || !value.includes('@')) return value;
+    const [name, domain] = value.split('@');
+    if (!name) return value;
+    if (name.length <= 2) return `${name[0] || '*'}***@${domain}`;
+    return `${name[0]}${'*'.repeat(Math.max(2, name.length - 2))}${name[name.length - 1]}@${domain}`;
+  };
 
   useEffect(() => {
     // Get email, role, and password reset flag from route params or AsyncStorage
@@ -140,57 +148,95 @@ export default function Otp({ navigation, route }) {
       colors={['#E8F5E9', '#F1F8E9', '#FFF9C4']}
       style={styles.wrapper}
     >
-      <View style={styles.container}>
-        <Image 
-          style={{ alignSelf:'center', marginBottom: 15, width: 70, height: 70, borderRadius: 10 }} 
-          source={require('../assests/Logo.jpg')}
-        />
-        <Text style={styles.title}>OTP Verification</Text>
-        <Text style={styles.subtitle}>Enter the 4-digit code sent to your email</Text>
-        {email ? (
-          <Text style={styles.emailText}>{email}</Text>
-        ) : null}
-
-        <View style={styles.otpContainer}>
-          {otp.map((digit, index) => (
-            <TextInput
-              key={index}
-              style={styles.otpInput}
-              keyboardType="numeric"
-              maxLength={1}
-              value={digit}
-              onChangeText={(text) => handleChange(text, index)}
-              ref={(ref) => (inputRefs.current[index] = ref)}
-              editable={!isLoading}
-            />
-          ))}
-        </View>
-
-        <TouchableOpacity 
-          onPress={handleSubmit} 
-          activeOpacity={0.8}
-          disabled={isLoading}
+      <View style={styles.orbTop} />
+      <View style={styles.orbBottom} />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.keyboardWrapper}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <LinearGradient
-            colors={['#0A7D4F', '#0F9D63', '#15B872']}
-            style={styles.button}
-            start={{x: 0, y: 0}}
-            end={{x: 1, y: 0}}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.buttonText}>Verify OTP</Text>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
+          <View style={styles.container}>
+            <LinearGradient
+              colors={['#FFFFFF', '#F6FFF8']}
+              style={styles.logoShell}
+            >
+              <Image
+                style={styles.logo}
+                source={require('../assests/Logo.jpg')}
+              />
+            </LinearGradient>
 
-        <TouchableOpacity onPress={handleResendOTP} disabled={isResending}>
-          <Text style={styles.resend}>
-            {isResending ? 'Sending...' : 'Resend OTP'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+            <Text style={styles.title}>Verify OTP</Text>
+            <Text style={styles.subtitle}>Enter the 4-digit code sent to your email address</Text>
+
+            {email ? (
+              <View style={styles.emailPill}>
+                <Text style={styles.emailIcon}>📩</Text>
+                <Text style={styles.emailText}>{maskEmail(email)}</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.otpContainer}>
+              {otp.map((digit, index) => (
+                <TextInput
+                  key={index}
+                  style={styles.otpInput}
+                  keyboardType="numeric"
+                  maxLength={1}
+                  value={digit}
+                  onChangeText={(text) => handleChange(text, index)}
+                  ref={(ref) => (inputRefs.current[index] = ref)}
+                  editable={!isLoading}
+                  textAlign="center"
+                  selectionColor="#0A7D4F"
+                />
+              ))}
+            </View>
+
+            <TouchableOpacity
+              onPress={handleSubmit}
+              activeOpacity={0.85}
+              disabled={isLoading}
+              style={styles.buttonWrap}
+            >
+              <LinearGradient
+                colors={['#0A7D4F', '#0F9D63', '#15B872']}
+                style={styles.button}
+                start={{x: 0, y: 0}}
+                end={{x: 1, y: 0}}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.buttonText}>Verify OTP</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <View style={styles.resendRow}>
+              <Text style={styles.resendHint}>Didn't receive code?</Text>
+              <TouchableOpacity
+                onPress={handleResendOTP}
+                disabled={isResending}
+                activeOpacity={0.8}
+                style={styles.resendButton}
+              >
+                {isResending ? (
+                  <ActivityIndicator size="small" color="#0A7D4F" />
+                ) : (
+                  <Text style={styles.resend}>Resend OTP</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.securityNote}>For your security, this code expires shortly.</Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </LinearGradient>
   );
 }
@@ -198,81 +244,178 @@ export default function Otp({ navigation, route }) {
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
+  },
+  keyboardWrapper: {
+    flex: 1,
+  },
+  scrollContainer: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 30,
+  },
+  orbTop: {
+    position: 'absolute',
+    top: -80,
+    right: -50,
+    width: 230,
+    height: 230,
+    borderRadius: 115,
+    backgroundColor: 'rgba(10,125,79,0.13)',
+  },
+  orbBottom: {
+    position: 'absolute',
+    bottom: -70,
+    left: -40,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(255,235,59,0.2)',
   },
   container: {
-    width: '90%',
-    padding: 30,
+    width: '92%',
+    maxWidth: 420,
+    paddingHorizontal: 24,
+    paddingVertical: 30,
     backgroundColor: '#FFFFFF',
-    borderRadius: 30,
-    elevation: 15,
+    borderRadius: 28,
+    elevation: 14,
     alignItems: 'center',
     shadowColor: '#0A7D4F',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+  },
+  logoShell: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E8F5E9',
+  },
+  logo: {
+    width: 68,
+    height: 68,
+    borderRadius: 16,
   },
   title: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '900',
     color: '#0A7D4F',
-    marginBottom: 10,
+    marginBottom: 8,
     letterSpacing: 0.5,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: 15,
+    color: '#5F6F66',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 14,
     fontWeight: '600',
+    lineHeight: 22,
+  },
+  emailPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#F1F8E9',
+    borderWidth: 1,
+    borderColor: '#DCECD7',
+    marginBottom: 24,
+  },
+  emailIcon: {
+    fontSize: 14,
+    marginRight: 6,
   },
   emailText: {
     fontSize: 14,
     color: '#0A7D4F',
     fontWeight: '700',
-    marginBottom: 25,
   },
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    width: '80%',
-    marginBottom: 35,
+    width: '100%',
+    marginBottom: 28,
+    gap: 10,
   },
   otpInput: {
-    width: 60,
-    height: 60,
+    flex: 1,
+    minWidth: 56,
+    maxWidth: 70,
+    height: 66,
     borderWidth: 2,
     borderColor: '#E8F5E9',
-    borderRadius: 15,
-    textAlign: 'center',
-    fontSize: 24,
+    borderRadius: 16,
+    fontSize: 26,
     color: '#0A7D4F',
-    backgroundColor: '#FAFAFA',
-    fontWeight: '700',
-    elevation: 3,
+    backgroundColor: '#FBFEFB',
+    fontWeight: '800',
+    elevation: 2,
+    shadowColor: '#0A7D4F',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+  },
+  buttonWrap: {
+    width: '100%',
+    marginBottom: 16,
   },
   button: {
     paddingVertical: 16,
-    borderRadius: 15,
+    borderRadius: 16,
     alignItems: 'center',
-    width: '85%',
-    marginBottom: 20,
-    elevation: 8,
+    width: '100%',
+    elevation: 7,
     shadowColor: '#0A7D4F',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.35,
     shadowRadius: 8,
   },
   buttonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  resendRow: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  resendHint: {
+    color: '#708179',
+    fontSize: 13,
     fontWeight: '600',
-    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  resendButton: {
+    minWidth: 130,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#CFE8D9',
+    backgroundColor: '#F8FFF9',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    alignItems: 'center',
   },
   resend: {
     color: '#0A7D4F',
-    fontWeight: '700',
-    fontSize: 15,
+    fontWeight: '800',
+    fontSize: 13,
+    letterSpacing: 0.3,
+  },
+  securityNote: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#7A877F',
+    textAlign: 'center',
+    fontWeight: '600',
   },
 });

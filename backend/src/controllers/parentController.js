@@ -4,6 +4,7 @@ const Progress = require('../models/Progress');
 const QuizResult = require('../models/QuizResult');
 const Mistake = require('../models/Mistake');
 const Achievement = require('../models/Achievement');
+const Recitation = require('../models/Recitation');
 
 // @desc    Generate link code for child
 // @route   POST /api/parent/generate-link
@@ -114,10 +115,26 @@ const getChildren = async (req, res, next) => {
       status: 'active'
     }).populate('child', 'name email profileImage proficiencyLevel coins streakDays accuracy totalLessonsCompleted currentLevel lastActiveDate');
 
+    const populatedLinks = await Promise.all(
+      links.map(async (link) => {
+        if (!link.child) return link;
+        
+        // Compute real summary instead of using the hardcoded default from User model
+        const summary = await Progress.getUserProgress(link.child._id);
+        const childObj = link.child.toObject();
+        childObj.accuracy = summary.accuracy || 0;
+        
+        return {
+          ...link.toObject(),
+          child: childObj
+        };
+      })
+    );
+
     res.status(200).json({
       success: true,
-      count: links.length,
-      data: { children: links }
+      count: populatedLinks.length,
+      data: { children: populatedLinks }
     });
   } catch (error) {
     next(error);
@@ -267,6 +284,44 @@ const getChildAchievements = async (req, res, next) => {
   }
 };
 
+// @desc    Get child's recitation attempts (for parent)
+// @route   GET /api/parent/child/:childId/recitations
+// @access  Private (Parent only)
+const getChildRecitations = async (req, res, next) => {
+  try {
+    const { childId } = req.params;
+
+    // Verify parent-child relationship
+    const link = await ParentChild.findOne({
+      parent: req.user.id,
+      child: childId,
+      status: 'active'
+    });
+
+    if (!link) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view this child\'s recitations'
+      });
+    }
+
+    const recitations = await Recitation.find({
+      user: childId,
+      processingStatus: 'completed'
+    })
+      .sort({ createdAt: -1 })
+      .select('module levelId lessonId overallScore accuracyScore pronunciationScore tajweedScore createdAt');
+
+    res.status(200).json({
+      success: true,
+      count: recitations.length,
+      data: { recitations }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Unlink child
 // @route   DELETE /api/parent/child/:childId
 // @access  Private (Parent only)
@@ -307,5 +362,6 @@ module.exports = {
   getChildQuizzes,
   getChildMistakes,
   getChildAchievements,
+  getChildRecitations,
   unlinkChild
 };

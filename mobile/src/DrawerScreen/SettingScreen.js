@@ -1,17 +1,19 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image, TextInput, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image, TextInput, ActivityIndicator, Alert } from "react-native";
 import React, { useState } from "react";
 import CustomModal from "../Setting/CustomModal";
 import LinearGradient from 'react-native-linear-gradient';
 import { useAuth } from '../context/AuthContext';
 import parentService from '../services/parentService';
+import userService from '../services/userService';
 
 export default function SettingScreen({ navigation }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [modalVisible, setModalVisible] = useState(false);
   const [modalType, setModalType] = useState(""); // "logout" or "delete" or "linkParent"
   const [linkCode, setLinkCode] = useState("");
   const [linkLoading, setLinkLoading] = useState(false);
   const [linkError, setLinkError] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
 
   const openModal = (type) => {
     setModalType(type);
@@ -22,16 +24,34 @@ export default function SettingScreen({ navigation }) {
     }
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    if (actionLoading) return;
+
     if (modalType === "linkParent") {
       handleLinkToParent();
       return;
     }
+
     setModalVisible(false);
-    if (modalType === "logout") {
-      navigation.replace("Login");
-    } else if (modalType === "delete") {
-      navigation.replace("SignUp");
+
+    try {
+      setActionLoading(true);
+
+      if (modalType === "logout") {
+        await logout();
+        navigation.replace("Login");
+      } else if (modalType === "delete") {
+        await userService.deleteAccount();
+        await logout().catch(() => null);
+        navigation.replace("SignUp");
+      }
+    } catch (error) {
+      Alert.alert(
+        'Action Failed',
+        error?.message || 'Something went wrong. Please try again.'
+      );
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -48,7 +68,12 @@ export default function SettingScreen({ navigation }) {
       setModalVisible(false);
       alert("Success! You have been linked to your parent's account.");
     } catch (error) {
-      setLinkError(error.message || "Invalid or expired link code");
+      const msg = error?.message || "Invalid or expired link code";
+      if (msg.toLowerCase().includes('network') || msg.toLowerCase().includes('connect')) {
+        setLinkError('Cannot reach server. Make sure backend is running and phone/emulator is on the same network.');
+      } else {
+        setLinkError(msg);
+      }
     } finally {
       setLinkLoading(false);
     }

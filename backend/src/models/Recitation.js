@@ -20,6 +20,9 @@ const mistakeDetailSchema = new mongoose.Schema({
 const tajweedScoreSchema = new mongoose.Schema({
   rule: { type: String, required: true },
   score: { type: Number, min: 0, max: 100, default: 0 },
+  applicable: { type: Boolean, default: true },
+  fulfilled: { type: Boolean, default: false },
+  totalChecks: { type: Number, default: 0 },
   details: { type: String }
 }, { _id: false });
 

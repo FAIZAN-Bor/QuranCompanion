@@ -11,6 +11,15 @@ const LessonActivityDetails = ({ route }) => {
   const [lessons, setLessons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowMs(Date.now());
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (child?._id) {
@@ -21,13 +30,19 @@ const LessonActivityDetails = ({ route }) => {
   const fetchLessonDetails = async () => {
     try {
       setLoading(true);
-      const response = await parentService.getChildProgress(child._id);
+      const [progressResponse, recitationsResponse, quizzesResponse] = await Promise.all([
+        parentService.getChildProgress(child._id),
+        parentService.getChildRecitations(child._id).catch(() => ({ success: false, data: { recitations: [] } })),
+        parentService.getChildQuizzes(child._id).catch(() => ({ success: false, data: { quizzes: [] } })),
+      ]);
       
-      if (response.success && response.data) {
-        const progressData = response.data.progress || [];
+      if (progressResponse.success && progressResponse.data) {
+        const progressData = progressResponse.data.progress || [];
+        const recitationsData = recitationsResponse?.data?.recitations || [];
+        const quizzesData = quizzesResponse?.data?.quizzes || [];
         
         // Transform progress data into lesson details format
-        const transformedLessons = transformProgressToLessons(progressData);
+        const transformedLessons = transformProgressToLessons(progressData, recitationsData, quizzesData);
         setLessons(transformedLessons);
       }
     } catch (error) {
@@ -45,33 +60,97 @@ const LessonActivityDetails = ({ route }) => {
   };
 
   // Transform raw progress data into lesson display format
-  const transformProgressToLessons = (progressData) => {
-    // Group progress by lessonId to aggregate data
+  const normalizeLevelId = (value) => {
+    const raw = String(value || '').toLowerCase();
+    const levelMatch = raw.match(/(qaida|quran|dua)(?:_level)?_(\d+)/);
+    if (levelMatch) return `${levelMatch[1]}_${Number(levelMatch[2])}`;
+    return raw;
+  };
+
+  const transformProgressToLessons = (progressData, recitationsData = [], quizzesData = []) => {
+    const recitationMap = {};
+    const quizCoinsByLevel = {};
+
+    recitationsData.forEach((r) => {
+      const normalizedLevel = normalizeLevelId(r?.levelId || 'unknown');
+      const key = `${r.module || 'Unknown'}_${normalizedLevel || 'unknown'}`;
+      if (!recitationMap[key]) {
+        recitationMap[key] = [];
+      }
+      recitationMap[key].push(r);
+    });
+
+    Object.keys(recitationMap).forEach((key) => {
+      recitationMap[key].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    });
+
+    quizzesData.forEach((q) => {
+      const levelKey = normalizeLevelId(q?.levelId || q?.quizId || '');
+      if (!levelKey) return;
+      const coins = Number(q?.coinsEarned || 0);
+      if (!quizCoinsByLevel[levelKey]) quizCoinsByLevel[levelKey] = 0;
+      quizCoinsByLevel[levelKey] += coins;
+    });
+
+    // Group progress by module/level/lesson
     const lessonMap = {};
     
     progressData.forEach(p => {
-      const key = `${p.module}_${p.lessonId}`;
+      const normalizedLevel = normalizeLevelId(p?.levelId || 'unknown');
+      const key = `${p.module || 'Unknown'}_${normalizedLevel || 'unknown'}`;
+      const recitationsForLesson = recitationMap[key] || [];
+      const recitationAccuracyTrend = recitationsForLesson
+        .map((r) => Math.round(r.accuracyScore ?? r.overallScore ?? 0))
+        .filter((score) => Number.isFinite(score));
+      const currentAccuracy = recitationAccuracyTrend.length
+        ? recitationAccuracyTrend[recitationAccuracyTrend.length - 1]
+        : (p.accuracy || 0);
+      const levelKey = normalizeLevelId(p?.levelId || '');
+      const progressCoins = Number(p?.coinsEarned || 0);
+      const fallbackQuizCoins = Number(quizCoinsByLevel[levelKey] || 0);
+      const effectiveCoins = progressCoins > 0 ? progressCoins : fallbackQuizCoins;
+      const mostRecentRecitationAt = recitationsForLesson.length
+        ? recitationsForLesson[recitationsForLesson.length - 1]?.createdAt
+        : null;
+      const lastRecordedAt = mostRecentRecitationAt || p.lastAccessedAt || p.updatedAt || p.createdAt;
       
       if (!lessonMap[key]) {
         lessonMap[key] = {
           id: p._id,
           title: getLessonTitle(p),
           type: p.module,
-          attempts: p.attempts || 1,
-          accuracy: [p.accuracy || 0],
-          currentAccuracy: p.accuracy || 0,
-          lastRecorded: getTimeAgo(p.lastAccessedAt || p.updatedAt),
+          attempts: Math.max(p.attempts || 0, recitationsForLesson.length || 0),
+          accuracyTrend: recitationAccuracyTrend,
+          currentAccuracy,
+          lastRecordedAt,
+          lastRecorded: getTimeAgo(lastRecordedAt),
           status: p.status,
           timeSpent: p.timeSpent || 0,
           completionPercentage: p.completionPercentage || 0,
-          coinsEarned: p.coinsEarned || 0,
+          coinsEarned: effectiveCoins,
           content: p.contentId,
+          moduleLevel: p.levelId,
         };
       } else {
-        // Aggregate multiple attempts
-        lessonMap[key].attempts += 1;
-        lessonMap[key].accuracy.push(p.accuracy || 0);
-        lessonMap[key].currentAccuracy = p.accuracy || 0;
+        // Keep the latest data by access/update timestamps.
+        const currentDate = new Date(lessonMap[key].lastRecordedAt || 0).getTime();
+        const candidateDate = new Date(lastRecordedAt || 0).getTime();
+        if (candidateDate >= currentDate) {
+          lessonMap[key].id = p._id;
+          lessonMap[key].title = getLessonTitle(p);
+          lessonMap[key].type = p.module;
+          lessonMap[key].attempts = Math.max(p.attempts || 0, recitationsForLesson.length || 0);
+          lessonMap[key].accuracyTrend = recitationAccuracyTrend;
+          lessonMap[key].currentAccuracy = currentAccuracy;
+          lessonMap[key].lastRecordedAt = lastRecordedAt;
+          lessonMap[key].lastRecorded = getTimeAgo(lastRecordedAt);
+          lessonMap[key].status = p.status;
+          lessonMap[key].timeSpent = p.timeSpent || 0;
+          lessonMap[key].completionPercentage = p.completionPercentage || 0;
+          lessonMap[key].coinsEarned = Math.max(Number(lessonMap[key].coinsEarned || 0), effectiveCoins);
+          lessonMap[key].content = p.contentId;
+          lessonMap[key].moduleLevel = p.levelId;
+        }
       }
     });
 
@@ -79,41 +158,59 @@ const LessonActivityDetails = ({ route }) => {
     return Object.values(lessonMap)
       .map(lesson => ({
         ...lesson,
-        // Ensure accuracy array has at least 2 points for chart
-        accuracy: lesson.accuracy.length < 2 
-          ? [0, ...lesson.accuracy] 
-          : lesson.accuracy.slice(-8), // Last 8 attempts max
+        attempts: lesson.attempts > 0 ? lesson.attempts : 0,
+        accuracyTrend: (lesson.accuracyTrend || []).slice(-8),
+        lastRecorded: getTimeAgo(lesson.lastRecordedAt),
       }))
+      .sort((a, b) => new Date(b.lastRecordedAt || 0) - new Date(a.lastRecordedAt || 0))
       .slice(0, 10); // Show top 10 lessons
   };
 
   const getLessonTitle = (progress) => {
+    const levelId = String(progress?.levelId || '').toLowerCase();
+    const levelMatch = levelId.match(/(qaida|quran|dua)(?:_level)?_(\d+)/);
+    if (levelMatch) {
+      const moduleName = levelMatch[1].charAt(0).toUpperCase() + levelMatch[1].slice(1);
+      return `${moduleName} Level ${Number(levelMatch[2])}`;
+    }
+
     if (progress.contentId) {
       return progress.contentId.name || progress.contentId.title || progress.lessonId;
     }
-    // Format lessonId into readable title
-    const parts = progress.lessonId.split('_');
-    if (parts.length >= 2) {
-      return `${progress.module} - Lesson ${parts[1] || parts[0]}`;
+
+    if (progress?.module) {
+      return `${progress.module} Lesson`;
     }
-    return progress.lessonId;
+
+    return 'Lesson';
   };
 
   const getTimeAgo = (dateString) => {
     if (!dateString) return 'Unknown';
     
-    const now = new Date();
+    const now = new Date(nowMs);
     const date = new Date(dateString);
-    const diffMs = now - date;
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    
-    if (diffHours < 1) return 'Just now';
-    if (diffHours < 24) return `${diffHours} hours ago`;
+    const dateMs = date.getTime();
+    if (!Number.isFinite(dateMs)) return 'Unknown';
+
+    const diffMs = Math.max(0, now.getTime() - dateMs);
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMinutes / 60);
     const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    const diffWeeks = Math.floor(diffDays / 7);
-    return `${diffWeeks} week${diffWeeks > 1 ? 's' : ''} ago`;
+    const exactTime = date.toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    
+    if (diffMinutes < 1) return `Less than a minute ago (${exactTime})`;
+    if (diffMinutes < 60) return `${diffMinutes} min ago (${exactTime})`;
+    if (diffHours < 24) {
+      const mins = diffMinutes % 60;
+      return `${diffHours}h ${mins}m ago (${exactTime})`;
+    }
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago (${exactTime})`;
   };
 
   const getTypeColor = (type) => {
@@ -235,14 +332,14 @@ const LessonActivityDetails = ({ route }) => {
                 </View>
 
                 {/* Accuracy Trend */}
-                {lesson.accuracy.length >= 2 && (
+                {lesson.accuracyTrend.length >= 2 && (
                   <View style={styles.chartContainer}>
                     <Text style={styles.chartTitle}>Accuracy Trend</Text>
                     <LineChart
                       data={{
                         labels: [],
                         datasets: [{
-                          data: lesson.accuracy,
+                          data: lesson.accuracyTrend,
                         }],
                       }}
                       width={screenWidth - 80}
@@ -266,6 +363,10 @@ const LessonActivityDetails = ({ route }) => {
                       withHorizontalLabels={false}
                     />
                   </View>
+                )}
+
+                {lesson.accuracyTrend.length < 2 && (
+                  <Text style={styles.insufficientTrendText}>More recitation attempts are needed to draw a trend graph.</Text>
                 )}
 
               </LinearGradient>
@@ -430,6 +531,12 @@ const styles = StyleSheet.create({
   },
   miniChart: {
     borderRadius: 12,
+  },
+  insufficientTrendText: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '600',
   },
 });
 
