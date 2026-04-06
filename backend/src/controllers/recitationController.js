@@ -6,7 +6,7 @@ const Recitation = require('../models/Recitation');
 const Mistake = require('../models/Mistake');
 const Progress = require('../models/Progress');
 
-const AI_BACKEND_URL = process.env.AI_BACKEND_URL || 'http://localhost:8000';
+const AI_BACKEND_URL = process.env.AI_BACKEND_URL || 'http://127.0.0.1:8000';
 
 /**
  * @desc    Analyze a recitation recording
@@ -79,17 +79,18 @@ const analyzeRecitation = async (req, res) => {
 
       aiResult = aiResponse.data;
     } catch (aiError) {
-      console.error('AI Backend Error:', aiError.message);
+      const errorMsg = aiError.response?.data?.detail || aiError.message || 'AI processing failed';
+      console.error('AI Backend Error:', errorMsg);
 
       // Update recitation as failed
       recitation.processingStatus = 'failed';
-      recitation.processingError = aiError.message || 'AI processing failed';
+      recitation.processingError = errorMsg;
       recitation.processingTime = Date.now() - startTime;
       await recitation.save();
 
       return res.status(503).json({
         success: false,
-        message: 'AI analysis service is currently unavailable. Please try again later.',
+        message: `AI analysis service error: ${errorMsg}. Please try again later.`,
         recitationId: recitation._id
       });
     }
